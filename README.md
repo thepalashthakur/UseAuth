@@ -29,6 +29,8 @@ Set these variables in `.env.local`:
 | `SUPABASE_PUBLISHABLE_KEY` | Publishable key; never use a secret or service-role key                                   |
 | `APP_URL`                  | Canonical service origin, e.g. `http://localhost:3000`                                    |
 | `AUTH_ALLOWED_ORIGINS`     | Comma-separated browser app origins, e.g. `http://localhost:3001,https://app.example.com` |
+| `IOS_APP_REDIRECT_URL`     | Fixed iOS return link after email confirmation                                            |
+| `ANDROID_APP_REDIRECT_URL` | Fixed Android return link after email confirmation                                        |
 
 Open http://localhost:3000. Without credentials, the app renders setup instructions and auth endpoints return 503. No fake user accounts or demo sessions are created.
 
@@ -114,6 +116,12 @@ Errors: `{ "error": { "code": "INVALID_CREDENTIALS", "message": "..." } }`. Stat
 - The token API does not use cookies or credentialed CORS. CORS controls browser origins, not server-to-server access or authorization.
 - The hosted pages use cookies on the auth service's domain. They do not establish a session on a different app domain. Cross-domain SSO/redirect handoff is not implemented in v1.
 - Add RLS policies to any future application tables; authenticating a user does not grant blanket database access.
+
+### iOS and Android email confirmation
+
+Mobile apps use the same token API. To sign up, include `"platform": "ios"` or `"platform": "android"` in the `/sign-up` JSON body. Configure `IOS_APP_REDIRECT_URL` and/or `ANDROID_APP_REDIRECT_URL` as fixed app links (or app URL schemes). Add the corresponding auth-service callback URL, `/auth/mobile/confirm/ios` or `/auth/mobile/confirm/android`, to Supabase Authentication → URL Configuration → Redirect URLs. Keep the confirmation email template above using `{{ .RedirectTo }}`.
+
+The email opens the auth-service callback. It verifies the token hash and redirects to the configured app link with `confirmation=success` or `confirmation=error`. Configure the link in iOS Universal Links or Android App Links (or register its custom URL scheme) so the app can receive it. No access or refresh token is placed in the link. After success, the app signs in with the user's email and password through `/api/v1/auth/sign-in`, then securely stores the returned session. The existing `/auth/confirm` browser callback continues to create a hosted cookie session.
 
 ## Verification
 

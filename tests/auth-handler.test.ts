@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     refreshSession: vi.fn(),
     setSession: vi.fn(),
     signOut: vi.fn(),
+    verifyOtp: vi.fn(),
   },
 }));
 vi.mock("@/lib/supabase/server", () => ({
@@ -56,6 +57,8 @@ beforeEach(() => {
   vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test");
   vi.stubEnv("APP_URL", "https://auth.example.com");
   vi.stubEnv("AUTH_ALLOWED_ORIGINS", "https://app.example.com");
+  vi.stubEnv("IOS_APP_REDIRECT_URL", "https://ios.example.com/auth/confirmed");
+  vi.stubEnv("ANDROID_APP_REDIRECT_URL", "useauth-android://auth/confirmed");
 });
 
 describe("authentication boundaries", () => {
@@ -225,6 +228,52 @@ describe("credential and session flows", () => {
         options: { emailRedirectTo: "https://auth.example.com/auth/confirm" },
       }),
     );
+  });
+  it("sends mobile signup confirmation to the fixed platform callback", async () => {
+    mocks.auth.signUp.mockResolvedValue({
+      data: { user, session: null },
+      error: null,
+    });
+    const response = await handleAuth(
+      request({
+        email: "test@example.com",
+        password: "my-password",
+        platform: "ios",
+      }),
+      "sign-up",
+      "token",
+    );
+    expect(response.status).toBe(201);
+    expect(mocks.auth.signUp).toHaveBeenCalledWith({
+      email: "test@example.com",
+      password: "my-password",
+      options: {
+        emailRedirectTo: "https://auth.example.com/auth/mobile/confirm/ios",
+      },
+    });
+  });
+  it("rejects unknown platforms and missing mobile configuration", async () => {
+    const body = { email: "test@example.com", password: "my-password" };
+    expect(
+      (
+        await handleAuth(
+          request({ ...body, platform: "web" }),
+          "sign-up",
+          "token",
+        )
+      ).status,
+    ).toBe(400);
+    vi.stubEnv("IOS_APP_REDIRECT_URL", "");
+    expect(
+      (
+        await handleAuth(
+          request({ ...body, platform: "ios" }),
+          "sign-up",
+          "token",
+        )
+      ).status,
+    ).toBe(503);
+    expect(mocks.auth.signUp).not.toHaveBeenCalled();
   });
   it("returns generic credential errors without provider details", async () => {
     mocks.auth.signInWithPassword.mockResolvedValue({

@@ -23,3 +23,26 @@ export function appOrigin() {
     throw new Error("APP_URL must be an HTTP origin.");
   return url.origin;
 }
+
+export function mobileAppUrl(platform: "ios" | "android") {
+  const value =
+    platform === "ios"
+      ? process.env.IOS_APP_REDIRECT_URL
+      : process.env.ANDROID_APP_REDIRECT_URL;
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    const scheme = url.protocol.slice(0, -1);
+    if (
+      (url.protocol !== "https:" && !/^[a-z][a-z0-9+.-]*$/.test(scheme)) ||
+      ["http", "javascript", "data", "file", "blob", "ftp"].includes(scheme) ||
+      url.username ||
+      url.password ||
+      url.hash
+    )
+      return null;
+    return url;
+  } catch {
+    return null;
+  }
+}

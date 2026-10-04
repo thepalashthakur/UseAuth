@@ -5,12 +5,13 @@ import {
   allowedOrigin,
   credentials,
   signup,
+  tokenSignup,
   refresh,
   logout,
   publicUser,
   type AuthAction,
 } from "@/lib/auth-contract";
-import { appOrigin, isConfigured } from "@/lib/config";
+import { appOrigin, isConfigured, mobileAppUrl } from "@/lib/config";
 import { cookieClient, tokenClient } from "@/lib/supabase/server";
 
 function sessionData(session: Session | null) {
@@ -130,18 +131,40 @@ export async function handleAuth(
       return json({ user: publicUser(data.user) });
     }
     if (action === "sign-up" || action === "sign-in") {
-      const parsed = (action === "sign-up" ? signup : credentials).safeParse(
-        input,
-      );
+      const parsed = (
+        action === "sign-up"
+          ? mode === "token"
+            ? tokenSignup
+            : signup
+          : credentials
+      ).safeParse(input);
       if (!parsed.success)
         return fail("VALIDATION_ERROR", parsed.error.issues[0].message, 400);
+      const platformValue =
+        "platform" in parsed.data ? parsed.data.platform : undefined;
+      const platform =
+        platformValue === "ios" || platformValue === "android"
+          ? platformValue
+          : undefined;
+      if (platform && !mobileAppUrl(platform))
+        return fail(
+          "MOBILE_NOT_CONFIGURED",
+          "Mobile confirmation is not configured.",
+          503,
+        );
+      const { email, password } = parsed.data;
       const result =
         action === "sign-up"
           ? await client.auth.signUp({
-              ...parsed.data,
-              options: { emailRedirectTo: `${appOrigin()}/auth/confirm` },
+              email,
+              password,
+              options: {
+                emailRedirectTo: platform
+                  ? `${appOrigin()}/auth/mobile/confirm/${platform}`
+                  : `${appOrigin()}/auth/confirm`,
+              },
             })
-          : await client.auth.signInWithPassword(parsed.data);
+          : await client.auth.signInWithPassword({ email, password });
       if (result.error) {
         if (result.error.status === 429)
           return fail(

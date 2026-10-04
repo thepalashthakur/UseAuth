@@ -12,6 +12,11 @@ export const credentials = z
 export const signup = credentials.extend({
   password: z.string().min(8, "Use at least 8 characters.").max(128),
 });
+export const mobilePlatform = z.enum(["ios", "android"]);
+export type MobilePlatform = z.infer<typeof mobilePlatform>;
+export const tokenSignup = signup.extend({
+  platform: mobilePlatform.optional(),
+});
 export const refresh = z
   .object({ refresh_token: z.string().min(1).max(4096) })
   .strict();
