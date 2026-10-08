@@ -153,6 +153,29 @@ export async function handleAuth(
           503,
         );
       const { email, password } = parsed.data;
+      const username =
+        "username" in parsed.data && typeof parsed.data.username === "string"
+          ? parsed.data.username
+          : undefined;
+      const displayName =
+        "display_name" in parsed.data &&
+        typeof parsed.data.display_name === "string"
+          ? parsed.data.display_name
+          : undefined;
+      if (action === "sign-up" && username) {
+        const { data: available, error: lookupError } = await client.rpc(
+          "username_available",
+          { candidate: username },
+        );
+        if (lookupError || typeof available !== "boolean")
+          return fail(
+            "SERVICE_UNAVAILABLE",
+            "Username validation is unavailable.",
+            503,
+          );
+        if (!available)
+          return fail("USERNAME_TAKEN", "That username is already taken.", 409);
+      }
       const result =
         action === "sign-up"
           ? await client.auth.signUp({
@@ -162,10 +185,29 @@ export async function handleAuth(
                 emailRedirectTo: platform
                   ? `${appOrigin()}/auth/mobile/confirm/${platform}`
                   : `${appOrigin()}/auth/confirm`,
+                ...(username || displayName
+                  ? {
+                      data: {
+                        ...(username ? { username } : {}),
+                        ...(displayName ? { display_name: displayName } : {}),
+                      },
+                    }
+                  : {}),
               },
             })
           : await client.auth.signInWithPassword({ email, password });
       if (result.error) {
+        if (action === "sign-up" && username) {
+          const { data: available } = await client.rpc("username_available", {
+            candidate: username,
+          });
+          if (available === false)
+            return fail(
+              "USERNAME_TAKEN",
+              "That username is already taken.",
+              409,
+            );
+        }
         if (result.error.status === 429)
           return fail(
             "RATE_LIMITED",

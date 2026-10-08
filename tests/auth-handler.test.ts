@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  rpc: vi.fn(),
   auth: {
     signUp: vi.fn(),
     signInWithPassword: vi.fn(),
@@ -12,8 +13,8 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 vi.mock("@/lib/supabase/server", () => ({
-  cookieClient: vi.fn(async () => ({ auth: mocks.auth })),
-  tokenClient: vi.fn(() => ({ auth: mocks.auth })),
+  cookieClient: vi.fn(async () => ({ auth: mocks.auth, rpc: mocks.rpc })),
+  tokenClient: vi.fn(() => ({ auth: mocks.auth, rpc: mocks.rpc })),
 }));
 import { handleAuth } from "@/lib/auth-handler";
 import { allowedOrigin } from "@/lib/auth-contract";
@@ -24,6 +25,11 @@ const user = {
   email_confirmed_at: "2026-01-01",
   created_at: "2026-01-01",
   app_metadata: { private: true },
+  user_metadata: {
+    username: "my_user",
+    display_name: "My Name",
+    admin: true,
+  },
 };
 const session = {
   access_token: "access",
@@ -53,6 +59,7 @@ function request(
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.rpc.mockResolvedValue({ data: true, error: null });
   vi.stubEnv("SUPABASE_URL", "https://test.supabase.co");
   vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test");
   vi.stubEnv("APP_URL", "https://auth.example.com");
@@ -139,6 +146,8 @@ describe("authentication boundaries", () => {
         email: "test@example.com",
         email_verified: true,
         created_at: "2026-01-01",
+        username: "my_user",
+        display_name: "My Name",
       },
     });
     expect(response.headers.get("cache-control")).toBe("private, no-store");
@@ -169,6 +178,12 @@ describe("credential and session flows", () => {
       { email: "invalid", password: "long-password" },
       { email: "test@example.com", password: "short" },
       { email: "test@example.com", password: "long-password", role: "admin" },
+      { email: "test@example.com", password: "long-password", username: "a!" },
+      {
+        email: "test@example.com",
+        password: "long-password",
+        display_name: "x".repeat(81),
+      },
     ]) {
       expect((await handleAuth(request(body), "sign-up", "token")).status).toBe(
         400,
@@ -228,6 +243,130 @@ describe("credential and session flows", () => {
         options: { emailRedirectTo: "https://auth.example.com/auth/confirm" },
       }),
     );
+  });
+  it("stores optional signup profile fields in Supabase user metadata", async () => {
+    mocks.auth.signUp.mockResolvedValue({
+      data: { user, session: null },
+      error: null,
+    });
+    const response = await handleAuth(
+      request({
+        email: "test@example.com",
+        password: "my-password",
+        username: "  My_User  ",
+        display_name: "  My Name  ",
+      }),
+      "sign-up",
+      "token",
+    );
+    expect(response.status).toBe(201);
+    expect(mocks.auth.signUp).toHaveBeenCalledWith({
+      email: "test@example.com",
+      password: "my-password",
+      options: {
+        emailRedirectTo: "https://auth.example.com/auth/confirm",
+        data: { username: "my_user", display_name: "My Name" },
+      },
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith("username_available", {
+      candidate: "my_user",
+    });
+    expect((await response.json()).user).toBeNull();
+  });
+  it("rejects a duplicate username before signup", async () => {
+    mocks.rpc.mockResolvedValue({ data: false, error: null });
+    const response = await handleAuth(
+      request({
+        email: "test@example.com",
+        password: "my-password",
+        username: "taken_name",
+      }),
+      "sign-up",
+      "token",
+    );
+    expect(response.status).toBe(409);
+    expect((await response.json()).error.code).toBe("USERNAME_TAKEN");
+    expect(mocks.auth.signUp).not.toHaveBeenCalled();
+  });
+  it("reports a username claimed during a concurrent signup", async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: true, error: null })
+      .mockResolvedValueOnce({ data: false, error: null });
+    mocks.auth.signUp.mockResolvedValue({ error: { status: 500 } });
+    const response = await handleAuth(
+      request({
+        email: "test@example.com",
+        password: "my-password",
+        username: "race_name",
+      }),
+      "sign-up",
+      "token",
+    );
+    expect(response.status).toBe(409);
+    expect((await response.json()).error.code).toBe("USERNAME_TAKEN");
+  });
+  it("fails closed when username uniqueness cannot be checked", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: { message: "missing function" },
+    });
+    const response = await handleAuth(
+      request({
+        email: "test@example.com",
+        password: "my-password",
+        username: "new_name",
+      }),
+      "sign-up",
+      "token",
+    );
+    expect(response.status).toBe(503);
+    expect(mocks.auth.signUp).not.toHaveBeenCalled();
+  });
+  it("treats blank optional signup fields as absent", async () => {
+    mocks.auth.signUp.mockResolvedValue({
+      data: { user, session: null },
+      error: null,
+    });
+    await handleAuth(
+      request({
+        email: "test@example.com",
+        password: "my-password",
+        username: "  ",
+        display_name: " ",
+      }),
+      "sign-up",
+      "token",
+    );
+    expect(mocks.auth.signUp).toHaveBeenCalledWith({
+      email: "test@example.com",
+      password: "my-password",
+      options: { emailRedirectTo: "https://auth.example.com/auth/confirm" },
+    });
+  });
+  it("accepts a display name without a username", async () => {
+    mocks.auth.signUp.mockResolvedValue({
+      data: { user, session: null },
+      error: null,
+    });
+    const response = await handleAuth(
+      request({
+        email: "test@example.com",
+        password: "my-password",
+        display_name: "My Name",
+      }),
+      "sign-up",
+      "token",
+    );
+    expect(response.status).toBe(201);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.auth.signUp).toHaveBeenCalledWith({
+      email: "test@example.com",
+      password: "my-password",
+      options: {
+        emailRedirectTo: "https://auth.example.com/auth/confirm",
+        data: { display_name: "My Name" },
+      },
+    });
   });
   it("sends mobile signup confirmation to the fixed platform callback", async () => {
     mocks.auth.signUp.mockResolvedValue({

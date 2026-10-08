@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ShieldCheck, ArrowUpRight } from "lucide-react";
 import { isConfigured } from "@/lib/config";
+import { publicUser } from "@/lib/auth-contract";
 import { cookieClient } from "@/lib/supabase/server";
 import { Shell } from "@/components/shell";
 import { SignOut } from "@/components/sign-out";
@@ -13,6 +14,7 @@ export default async function Account() {
   const { data, error } = await client.auth.getUser();
   if (error || !data.user) redirect("/sign-in");
   const user = data.user;
+  const profile = publicUser(user);
   return (
     <Shell active="account">
       <div className="page-heading">
@@ -39,6 +41,18 @@ export default async function Account() {
           </div>
         </div>
         <dl className="account-details">
+          {profile.display_name && (
+            <div>
+              <dt>Display name</dt>
+              <dd>{profile.display_name}</dd>
+            </div>
+          )}
+          {profile.username && (
+            <div>
+              <dt>Username</dt>
+              <dd>{profile.username}</dd>
+            </div>
+          )}
           <div>
             <dt>Email address</dt>
             <dd>{user.email}</dd>

@@ -11,6 +11,23 @@ export const credentials = z
   .strict();
 export const signup = credentials.extend({
   password: z.string().min(8, "Use at least 8 characters.").max(128),
+  username: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .max(30)
+    .refine(
+      (value) => value === "" || /^[a-z0-9_]{3,30}$/.test(value),
+      "Username must be 3–30 letters, numbers, or underscores.",
+    )
+    .transform((value) => value || undefined)
+    .optional(),
+  display_name: z
+    .string()
+    .trim()
+    .max(80)
+    .transform((value) => value || undefined)
+    .optional(),
 });
 export const mobilePlatform = z.enum(["ios", "android"]);
 export type MobilePlatform = z.infer<typeof mobilePlatform>;
@@ -53,11 +70,16 @@ export function publicUser(user: {
   email?: string;
   email_confirmed_at?: string;
   created_at: string;
+  user_metadata?: Record<string, unknown>;
 }) {
+  const username = user.user_metadata?.username;
+  const displayName = user.user_metadata?.display_name;
   return {
     id: user.id,
     email: user.email,
     email_verified: Boolean(user.email_confirmed_at),
     created_at: user.created_at,
+    username: typeof username === "string" ? username : null,
+    display_name: typeof displayName === "string" ? displayName : null,
   };
 }

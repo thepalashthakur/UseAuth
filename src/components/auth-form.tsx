@@ -44,6 +44,12 @@ export function AuthForm({
         body: JSON.stringify({
           email: String(form.get("email")).trim(),
           password: form.get("password"),
+          ...(signingUp
+            ? {
+                username: String(form.get("username") ?? "").trim(),
+                display_name: String(form.get("display_name") ?? "").trim(),
+              }
+            : {}),
         }),
       });
       const body = await response.json();
@@ -108,6 +114,33 @@ export function AuthForm({
         </div>
       )}
       <form onSubmit={submit} className="auth-form">
+        {signingUp && (
+          <>
+            <label htmlFor="username">Username (optional)</label>
+            <input
+              id="username"
+              name="username"
+              type="text"
+              autoComplete="username"
+              minLength={3}
+              maxLength={30}
+              pattern="[A-Za-z0-9_]{3,30}"
+              title="3–30 letters, numbers, or underscores"
+              placeholder="your_username"
+              disabled={pending}
+            />
+            <label htmlFor="display_name">Display name (optional)</label>
+            <input
+              id="display_name"
+              name="display_name"
+              type="text"
+              autoComplete="nickname"
+              maxLength={80}
+              placeholder="How you want to be known"
+              disabled={pending}
+            />
+          </>
+        )}
         <label htmlFor="email">Email address</label>
         <input
           id="email"

@@ -80,8 +80,9 @@ export default function Docs() {
               </li>
             </ol>
             <div className="docs-callout">
-              Supabase Auth owns the users table and password storage. This
-              version needs no custom database migration or service-role key.
+              Supabase Auth owns the users table and password storage. Apply the
+              username migration in <code>supabase/migrations</code> before
+              deploying; the app needs no service-role key.
             </div>
           </section>
           <section id="endpoints" className="panel docs-section">
@@ -112,6 +113,11 @@ export default function Docs() {
                     '{ "email": "you@example.com", "password": "your-password" }'
                   }
                 </code>
+              </li>
+              <li>
+                <code>sign-up</code> also accepts optional <code>username</code>{" "}
+                and <code>display_name</code>. Usernames are unique, lowercase,
+                and 3–30 letters, numbers, or underscores.
               </li>
               <li>
                 <code>me</code>:{" "}

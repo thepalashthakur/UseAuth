@@ -9,7 +9,7 @@ A plug-and-play email/password authentication microservice built with Next.js Ap
 - Versioned JSON token API for consuming applications, refresh-token rotation, and session sign-out.
 - Exact-origin CORS allowlist, same-origin checks for cookie mutations, bounded JSON bodies, validated input, and non-cacheable auth responses.
 - Responsive overview and integration guide at `/docs`.
-- Supabase PostgreSQL's managed `auth.users` is the account database; passwords stay with Supabase. No custom tables or service-role credentials needed for v1.
+- Supabase PostgreSQL's managed `auth.users` is the account database; passwords stay with Supabase. A small `public.usernames` table reserves optional usernames; no service-role credential is needed by the app.
 
 ## Local setup
 
@@ -48,6 +48,8 @@ Open http://localhost:3000. Without credentials, the app renders setup instructi
 
 The callback verifies the hash, creates the hosted UI session, and redirects to `/account`. Consuming applications sign in through the API after confirmation. The callback never redirects to a caller-supplied URL.
 
+4. Apply `supabase/migrations/20261006000000_unique_usernames.sql` to the project using `supabase db push` before deploying this version. The migration reserves usernames case-insensitively and adds an availability check for signup. It can fail if existing users already have duplicate username metadata; resolve those duplicates before retrying.
+
 ## Deploy on Vercel
 
 1. Push this Git repository to your preferred Git host, then import it into Vercel.
@@ -60,15 +62,17 @@ The callback verifies the hash, creates the hosted UI session, and redirects to 
 
 Base URL: `https://your-auth-service.vercel.app/api/v1/auth`.
 
-| Method | Endpoint    | Input                                                         |
-| ------ | ----------- | ------------------------------------------------------------- |
-| POST   | `/sign-up`  | `{ "email": "you@example.com", "password": "your-password" }` |
-| POST   | `/sign-in`  | Same credential shape                                         |
-| GET    | `/me`       | `Authorization: Bearer <access_token>`                        |
-| POST   | `/refresh`  | `{ "refresh_token": "..." }`                                  |
-| POST   | `/sign-out` | `{ "access_token": "...", "refresh_token": "..." }`           |
+| Method | Endpoint    | Input                                                                                                                         |
+| ------ | ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/sign-up`  | `{ "email": "you@example.com", "password": "your-password", "username": "optional_handle", "display_name": "Optional Name" }` |
+| POST   | `/sign-in`  | Same credential shape                                                                                                         |
+| GET    | `/me`       | `Authorization: Bearer <access_token>`                                                                                        |
+| POST   | `/refresh`  | `{ "refresh_token": "..." }`                                                                                                  |
+| POST   | `/sign-out` | `{ "access_token": "...", "refresh_token": "..." }`                                                                           |
 
 POST bodies must be JSON and no larger than 16 KB. Sign-up passwords must be 8–128 characters; Supabase can enforce stricter rules. Sign-in accepts existing shorter passwords. Unknown fields are rejected.
+
+`username` and `display_name` are optional at sign-up. Usernames are unique, normalized to lowercase, and may contain 3–30 letters, numbers, or underscores. Display names may contain up to 80 characters. Both are stored in Supabase user metadata and returned by `/me`, sign-in, and refresh as `username` and `display_name` (or `null` for older users). User metadata is editable by its owner, so consuming apps must not treat either field as an authorization claim. Apply the migration in `supabase/migrations` before deploying this version; it reserves usernames and keeps the reservation synchronized with metadata changes.
 
 ```js
 const response = await fetch(`${AUTH_URL}/api/v1/auth/sign-in`, {
@@ -89,7 +93,9 @@ Successful sign-in (200) and sign-up without email confirmation (201):
     "id": "supabase-user-id",
     "email": "you@example.com",
     "email_verified": true,
-    "created_at": "2026-01-01T00:00:00Z"
+    "created_at": "2026-01-01T00:00:00Z",
+    "username": "optional_handle",
+    "display_name": "Optional Name"
   },
   "session": {
     "access_token": "...",
