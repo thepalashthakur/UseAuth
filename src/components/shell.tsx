@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { isConfigured } from "@/lib/config";
+import { cookieClient } from "@/lib/supabase/server";
 import {
   ArrowUpRight,
   Fingerprint,
@@ -21,7 +23,7 @@ export function Logo() {
   );
 }
 
-export function Shell({
+export async function Shell({
   children,
   active = "overview",
   accountEmail,
@@ -30,6 +32,13 @@ export function Shell({
   active?: "overview" | "docs" | "account";
   accountEmail?: string;
 }) {
+  let signedInEmail = accountEmail;
+  if (!signedInEmail && isConfigured()) {
+    const client = await cookieClient();
+    const { data } = await client.auth.getUser();
+    signedInEmail = data.user?.email;
+  }
+
   return (
     <div className="workspace">
       <aside className="sidebar">
@@ -95,10 +104,10 @@ export function Shell({
                   : "My account"}
             </strong>
           </span>
-          {accountEmail ? (
-            <span className="topbar-identity" title={accountEmail}>
-              <CircleUserRound size={17} /> {accountEmail}
-            </span>
+          {signedInEmail ? (
+            <Link href="/account" className="topbar-identity" title={signedInEmail}>
+              <CircleUserRound size={17} /> {signedInEmail}
+            </Link>
           ) : (
             <Link href="/sign-in" className="topbar-signin">
               Sign in <ArrowUpRight size={15} />

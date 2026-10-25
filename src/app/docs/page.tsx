@@ -2,6 +2,8 @@ import Link from "next/link";
 import { ArrowUpRight, BookOpen } from "lucide-react";
 import { Shell } from "@/components/shell";
 import { CopyButton } from "@/components/copy-button";
+
+export const dynamic = "force-dynamic";
 export const metadata = { title: "Integration guide" };
 const login = `const res = await fetch(AUTH_URL + '/api/v1/auth/sign-in', {\n  method: 'POST',\n  headers: { 'Content-Type': 'application/json' },\n  body: JSON.stringify({ email, password })\n});\nconst result = await res.json();\nif (!res.ok) throw new Error(result.error.message);\n// Store tokens securely on your application server.\nconst { session, user } = result;`;
 const endpoints = [
