@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
+  cookieGet: vi.fn(),
+  cookieDelete: vi.fn(),
   auth: {
     signUp: vi.fn(),
     signInWithPassword: vi.fn(),
@@ -12,7 +14,14 @@ const mocks = vi.hoisted(() => ({
     verifyOtp: vi.fn(),
     resetPasswordForEmail: vi.fn(),
     updateUser: vi.fn(),
+    getSession: vi.fn(),
   },
+}));
+vi.mock("next/headers", () => ({
+  cookies: vi.fn(async () => ({
+    get: mocks.cookieGet,
+    delete: mocks.cookieDelete,
+  })),
 }));
 vi.mock("@/lib/supabase/server", () => ({
   cookieClient: vi.fn(async () => ({ auth: mocks.auth, rpc: mocks.rpc })),
@@ -20,6 +29,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 import { handleAuth } from "@/lib/auth-handler";
 import { allowedOrigin, recoveryReturnUrl } from "@/lib/auth-contract";
+import { createRecoveryGrant } from "@/lib/recovery-grant";
 
 const user = {
   id: "user-1",
@@ -61,10 +71,12 @@ function request(
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.cookieGet.mockReset();
   mocks.rpc.mockResolvedValue({ data: true, error: null });
   vi.stubEnv("SUPABASE_URL", "https://test.supabase.co");
   vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test");
   vi.stubEnv("APP_URL", "https://auth.example.com");
+  vi.stubEnv("RECOVERY_GRANT_SECRET", "a".repeat(64));
   vi.stubEnv("AUTH_ALLOWED_ORIGINS", "https://app.example.com");
   vi.stubEnv("IOS_APP_REDIRECT_URL", "https://ios.example.com/auth/confirmed");
   vi.stubEnv("ANDROID_APP_REDIRECT_URL", "useauth-android://auth/confirmed");
@@ -212,6 +224,16 @@ describe("credential and session flows", () => {
     );
     expect(await unknown.json()).toEqual(await response.json());
   });
+  it("does not send unusable recovery emails when the signing secret is missing", async () => {
+    vi.stubEnv("RECOVERY_GRANT_SECRET", "");
+    const response = await handleAuth(
+      request({ email: "test@example.com" }),
+      "forgot-password",
+      "token",
+    );
+    expect(response.status).toBe(503);
+    expect(mocks.auth.resetPasswordForEmail).not.toHaveBeenCalled();
+  });
   it("sends recovery back to an approved app without exposing the reset token", async () => {
     mocks.auth.resetPasswordForEmail.mockResolvedValue({ error: null });
     const response = await handleAuth(
@@ -266,6 +288,12 @@ describe("credential and session flows", () => {
   });
   it("updates the password and signs out the hosted session", async () => {
     mocks.auth.getUser.mockResolvedValue({ data: { user }, error: null });
+    mocks.auth.getSession.mockResolvedValue({
+      data: { session: { ...session, user } },
+    });
+    mocks.cookieGet.mockReturnValue({
+      value: createRecoveryGrant(session.access_token, user.id),
+    });
     mocks.auth.updateUser.mockResolvedValue({ error: null });
     mocks.auth.signOut.mockResolvedValue({ error: null });
     const response = await handleAuth(
@@ -281,7 +309,24 @@ describe("credential and session flows", () => {
       password: "new-password",
     });
     expect(mocks.auth.signOut).toHaveBeenCalledWith({ scope: "local" });
+    expect(mocks.cookieDelete).toHaveBeenCalledWith("useauth-recovery");
     expect(await response.json()).not.toHaveProperty("session");
+  });
+  it("rejects a normal signed-in session without a recovery grant", async () => {
+    mocks.auth.getUser.mockResolvedValue({ data: { user }, error: null });
+    mocks.auth.getSession.mockResolvedValue({
+      data: { session: { ...session, user } },
+    });
+    const response = await handleAuth(
+      request(
+        { password: "new-password" },
+        { origin: "https://auth.example.com" },
+      ),
+      "reset-password",
+      "cookie",
+    );
+    expect(response.status).toBe(401);
+    expect(mocks.auth.updateUser).not.toHaveBeenCalled();
   });
   it("does not expose password updates on the token API", async () => {
     expect(
@@ -293,6 +338,58 @@ describe("credential and session flows", () => {
         )
       ).status,
     ).toBe(404);
+    expect(mocks.auth.updateUser).not.toHaveBeenCalled();
+  });
+  it("requires a signed-in user and the current password to change it", async () => {
+    mocks.auth.getUser.mockResolvedValue({ data: { user }, error: null });
+    mocks.auth.signInWithPassword.mockResolvedValue({
+      data: { user: null },
+      error: { status: 400 },
+    });
+    const response = await handleAuth(
+      request(
+        { current_password: "wrong-password", password: "new-password" },
+        { origin: "https://auth.example.com" },
+      ),
+      "change-password",
+      "cookie",
+    );
+    expect(response.status).toBe(401);
+    expect(mocks.auth.updateUser).not.toHaveBeenCalled();
+  });
+  it("changes the password after verifying the current password", async () => {
+    mocks.auth.getUser.mockResolvedValue({ data: { user }, error: null });
+    mocks.auth.signInWithPassword.mockResolvedValue({
+      data: { user },
+      error: null,
+    });
+    mocks.auth.updateUser.mockResolvedValue({ error: null });
+    const response = await handleAuth(
+      request(
+        { current_password: "old-password", password: "new-password" },
+        { origin: "https://auth.example.com" },
+      ),
+      "change-password",
+      "cookie",
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.auth.signInWithPassword).toHaveBeenCalledWith({
+      email: "test@example.com",
+      password: "old-password",
+    });
+    expect(mocks.auth.updateUser).toHaveBeenCalledWith({
+      password: "new-password",
+      current_password: "old-password",
+    });
+    expect(await response.json()).not.toHaveProperty("session");
+  });
+  it("keeps password changes on the hosted account route", async () => {
+    const response = await handleAuth(
+      request({ current_password: "old-password", password: "new-password" }),
+      "change-password",
+      "token",
+    );
+    expect(response.status).toBe(404);
     expect(mocks.auth.updateUser).not.toHaveBeenCalled();
   });
   it("rejects invalid email, weak signup passwords, and unexpected input", async () => {

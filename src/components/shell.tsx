@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   KeyRound,
   Terminal,
+  CircleUserRound,
 } from "lucide-react";
 
 export function Logo() {
@@ -23,9 +24,11 @@ export function Logo() {
 export function Shell({
   children,
   active = "overview",
+  accountEmail,
 }: {
   children: React.ReactNode;
   active?: "overview" | "docs" | "account";
+  accountEmail?: string;
 }) {
   return (
     <div className="workspace">
@@ -92,9 +95,15 @@ export function Shell({
                   : "My account"}
             </strong>
           </span>
-          <Link href="/sign-in" className="topbar-signin">
-            Sign in <ArrowUpRight size={15} />
-          </Link>
+          {accountEmail ? (
+            <span className="topbar-identity" title={accountEmail}>
+              <CircleUserRound size={17} /> {accountEmail}
+            </span>
+          ) : (
+            <Link href="/sign-in" className="topbar-signin">
+              Sign in <ArrowUpRight size={15} />
+            </Link>
+          )}
         </header>
         <main className="content">{children}</main>
         <footer className="footer">

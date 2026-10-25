@@ -11,12 +11,16 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("SUPABASE_URL", "https://test.supabase.co");
   vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test");
+  vi.stubEnv("RECOVERY_GRANT_SECRET", "a".repeat(64));
   vi.stubEnv("AUTH_ALLOWED_ORIGINS", "https://app.example.com");
 });
 
 describe("password recovery callback", () => {
   it("verifies a recovery hash and redirects without exposing it", async () => {
-    verifyOtp.mockResolvedValue({ error: null });
+    verifyOtp.mockResolvedValue({
+      data: { session: { access_token: "access", user: { id: "user-1" } } },
+      error: null,
+    });
     const response = await GET(
       new Request(
         "https://auth.example.com/auth/recovery?token_hash=secret&type=recovery",
@@ -32,6 +36,7 @@ describe("password recovery callback", () => {
     );
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(response.headers.get("set-cookie")).toContain("useauth-recovery=");
   });
   it("rejects invalid or non-recovery links", async () => {
     verifyOtp.mockResolvedValue({ error: { message: "invalid" } });
@@ -50,7 +55,10 @@ describe("password recovery callback", () => {
     expect(verifyOtp).toHaveBeenCalledTimes(1);
   });
   it("carries only an approved app return URL to the reset page", async () => {
-    verifyOtp.mockResolvedValue({ error: null });
+    verifyOtp.mockResolvedValue({
+      data: { session: { access_token: "access", user: { id: "user-1" } } },
+      error: null,
+    });
     const callback = (returnTo: string) =>
       GET(
         new Request(

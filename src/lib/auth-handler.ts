@@ -10,12 +10,19 @@ import {
   logout,
   forgotPassword,
   resetPassword,
+  changePassword,
   recoveryReturnUrl,
   publicUser,
   type AuthAction,
 } from "@/lib/auth-contract";
 import { appOrigin, isConfigured, mobileAppUrl } from "@/lib/config";
 import { cookieClient, tokenClient } from "@/lib/supabase/server";
+import { cookies } from "next/headers";
+import {
+  recoveryConfigured,
+  recoveryCookie,
+  validRecoveryGrant,
+} from "@/lib/recovery-grant";
 
 function sessionData(session: Session | null) {
   return session
@@ -134,6 +141,12 @@ export async function handleAuth(
       return json({ user: publicUser(data.user) });
     }
     if (action === "forgot-password") {
+      if (!recoveryConfigured())
+        return fail(
+          "NOT_CONFIGURED",
+          "Password recovery is not configured.",
+          503,
+        );
       const parsed = forgotPassword.safeParse(input);
       if (!parsed.success)
         return fail("VALIDATION_ERROR", parsed.error.issues[0].message, 400);
@@ -189,6 +202,23 @@ export async function handleAuth(
           "Your reset link is invalid or expired. Request a new one.",
           401,
         );
+      const store = await cookies();
+      const { data: sessionData } = await client.auth.getSession();
+      const session = sessionData.session;
+      if (
+        !session ||
+        session.user.id !== data.user.id ||
+        !validRecoveryGrant(
+          store.get(recoveryCookie)?.value,
+          session.access_token,
+          data.user.id,
+        )
+      )
+        return fail(
+          "UNAUTHORIZED",
+          "Your reset link is invalid or expired. Request a new one.",
+          401,
+        );
       const { error } = await client.auth.updateUser({
         password: parsed.data.password,
       });
@@ -205,10 +235,58 @@ export async function handleAuth(
           400,
         );
       await client.auth.signOut({ scope: "local" });
+      store.delete(recoveryCookie);
       return json({
         message:
           "Your password has been updated. Sign in with your new password.",
       });
+    }
+    if (action === "change-password") {
+      if (mode === "token")
+        return fail("NOT_FOUND", "Use the hosted account page.", 404);
+      const parsed = changePassword.safeParse(input);
+      if (!parsed.success)
+        return fail("VALIDATION_ERROR", parsed.error.issues[0].message, 400);
+      const { data, error: userError } = await client.auth.getUser();
+      if (userError || !data.user?.email)
+        return fail(
+          "UNAUTHORIZED",
+          "Sign in again to change your password.",
+          401,
+        );
+      const check = await tokenClient().auth.signInWithPassword({
+        email: data.user.email,
+        password: parsed.data.current_password,
+      });
+      if (check.error?.status === 429)
+        return fail(
+          "RATE_LIMITED",
+          "Too many attempts. Please try again later.",
+          429,
+        );
+      if (check.error || check.data.user?.id !== data.user.id)
+        return fail(
+          "INVALID_CREDENTIALS",
+          "Your current password is incorrect.",
+          401,
+        );
+      const { error } = await client.auth.updateUser({
+        password: parsed.data.password,
+        current_password: parsed.data.current_password,
+      });
+      if (error?.status === 429)
+        return fail(
+          "RATE_LIMITED",
+          "Too many attempts. Please try again later.",
+          429,
+        );
+      if (error)
+        return fail(
+          "CHANGE_PASSWORD_FAILED",
+          "Unable to change your password. Please try again.",
+          400,
+        );
+      return json({ message: "Your password has been changed." });
     }
     if (action === "sign-up" || action === "sign-in") {
       const parsed = (

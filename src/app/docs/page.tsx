@@ -51,8 +51,10 @@ export default function Docs() {
                   Copy <code>.env.example</code> to <code>.env.local</code> and
                   fill in <code>SUPABASE_URL</code>,{" "}
                   <code>SUPABASE_PUBLISHABLE_KEY</code>, and{" "}
-                  <code>APP_URL</code>. Use the publishable key from your
-                  project’s Connect dialog.
+                  <code>APP_URL</code>, and a private{" "}
+                  <code>RECOVERY_GRANT_SECRET</code> generated with{" "}
+                  <code>openssl rand -hex 32</code>. Use the publishable key
+                  from your project’s Connect dialog.
                 </p>
               </li>
               <li>

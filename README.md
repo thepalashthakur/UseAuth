@@ -27,6 +27,7 @@ Set these variables in `.env.local`:
 | -------------------------- | ----------------------------------------------------------------------------------------- |
 | `SUPABASE_URL`             | Project URL from Supabase's Connect dialog                                                |
 | `SUPABASE_PUBLISHABLE_KEY` | Publishable key; never use a secret or service-role key                                   |
+| `RECOVERY_GRANT_SECRET`    | Private 32-byte hex secret for short-lived recovery grants (`openssl rand -hex 32`)       |
 | `APP_URL`                  | Canonical service origin, e.g. `http://localhost:3000`                                    |
 | `AUTH_ALLOWED_ORIGINS`     | Comma-separated browser app origins, e.g. `http://localhost:3001,https://app.example.com` |
 | `IOS_APP_REDIRECT_URL`     | Fixed iOS return link after email confirmation                                            |
@@ -58,6 +59,8 @@ Under Authentication → Email Templates → Reset password, use:
 ```
 
 The recovery callback verifies the one-time hash, creates a hosted session, and opens `/reset-password`. After the password changes, the hosted session is signed out and the browser returns to the requesting app. The return URL never receives a recovery token or session. Supabase may require a newer or stronger password than the UI minimum.
+
+Signed-in users can change their password from `/account` by providing their current password. Email recovery uses a short-lived, server-signed grant so an ordinary signed-in session cannot submit a recovery reset.
 
 4. Apply `supabase/migrations/20261006000000_unique_usernames.sql` to the project using `supabase db push` before deploying this version. The migration reserves usernames case-insensitively and adds an availability check for signup. It can fail if existing users already have duplicate username metadata; resolve those duplicates before retrying.
 

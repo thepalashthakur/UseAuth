@@ -48,11 +48,18 @@ export const resetPassword = z
     password: z.string().min(8, "Use at least 8 characters.").max(128),
   })
   .strict();
+export const changePassword = z
+  .object({
+    current_password: z.string().min(1).max(128),
+    password: z.string().min(8, "Use at least 8 characters.").max(128),
+  })
+  .strict();
 export const actions = [
   "sign-up",
   "sign-in",
   "forgot-password",
   "reset-password",
+  "change-password",
   "refresh",
   "sign-out",
   "me",
