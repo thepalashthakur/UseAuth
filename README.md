@@ -37,7 +37,7 @@ Open http://localhost:3000. Without credentials, the app renders setup instructi
 ### Supabase configuration
 
 1. Create a Supabase project. Under Authentication → Providers, enable Email and password authentication and Confirm email. Set the minimum password length to at least 8.
-2. Under Authentication → URL Configuration, set Site URL to the auth service's origin. Add `http://localhost:3000/auth/confirm` and the deployed equivalent to Redirect URLs.
+2. Under Authentication → URL Configuration, set Site URL to the auth service's origin. Add `http://localhost:3000/auth/confirm`, `http://localhost:3000/auth/recovery`, and the deployed equivalents to Redirect URLs. For each consuming app that uses password recovery, also add its exact return URL (for example `https://app.example.com/sign-in`) to Redirect URLs.
 3. Under Authentication → Email Templates → Confirm signup, use:
 
 ```html
@@ -48,6 +48,17 @@ Open http://localhost:3000. Without credentials, the app renders setup instructi
 
 The callback verifies the hash, creates the hosted UI session, and redirects to `/account`. Consuming applications sign in through the API after confirmation. The callback never redirects to a caller-supplied URL.
 
+Under Authentication → Email Templates → Reset password, use:
+
+```html
+<a
+  href="{{ .SiteURL }}/auth/recovery?token_hash={{ .TokenHash }}&type=recovery&return_to={{ .RedirectTo }}"
+  >Reset your password</a
+>
+```
+
+The recovery callback verifies the one-time hash, creates a hosted session, and opens `/reset-password`. After the password changes, the hosted session is signed out and the browser returns to the requesting app. The return URL never receives a recovery token or session. Supabase may require a newer or stronger password than the UI minimum.
+
 4. Apply `supabase/migrations/20261006000000_unique_usernames.sql` to the project using `supabase db push` before deploying this version. The migration reserves usernames case-insensitively and adds an availability check for signup. It can fail if existing users already have duplicate username metadata; resolve those duplicates before retrying.
 
 ## Deploy on Vercel
@@ -55,22 +66,25 @@ The callback verifies the hash, creates the hosted UI session, and redirects to 
 1. Push this Git repository to your preferred Git host, then import it into Vercel.
 2. Select the Next.js preset (automatically detected). No custom `vercel.json` is required.
 3. Add the environment variables above. Set `APP_URL` to your stable production domain. Add exact consuming-app origins to `AUTH_ALLOWED_ORIGINS`; no wildcard or path prefixes.
-4. Update Supabase's Site URL and confirmation Redirect URLs for that domain.
+4. Update Supabase's Site URL and confirmation and recovery Redirect URLs for that domain.
 5. Deploy. Redeploy after changing variables. Configure separate preview environments if previews should authenticate; do not allow arbitrary preview domains in production.
 
 ## API
 
 Base URL: `https://your-auth-service.vercel.app/api/v1/auth`.
 
-| Method | Endpoint    | Input                                                                                                                         |
-| ------ | ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/sign-up`  | `{ "email": "you@example.com", "password": "your-password", "username": "optional_handle", "display_name": "Optional Name" }` |
-| POST   | `/sign-in`  | Same credential shape                                                                                                         |
-| GET    | `/me`       | `Authorization: Bearer <access_token>`                                                                                        |
-| POST   | `/refresh`  | `{ "refresh_token": "..." }`                                                                                                  |
-| POST   | `/sign-out` | `{ "access_token": "...", "refresh_token": "..." }`                                                                           |
+| Method | Endpoint           | Input                                                                                                                                                                                           |
+| ------ | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/sign-up`         | `{ "email": "you@example.com", "password": "your-password", "username": "optional_handle", "display_name": "Optional Name" }`                                                                   |
+| POST   | `/forgot-password` | `{ "email": "you@example.com", "return_to": "https://app.example.com/sign-in" }` — email a hosted reset link. `return_to` is optional; the response does not reveal whether the account exists. |
+| POST   | `/sign-in`         | Same credential shape                                                                                                                                                                           |
+| GET    | `/me`              | `Authorization: Bearer <access_token>`                                                                                                                                                          |
+| POST   | `/refresh`         | `{ "refresh_token": "..." }`                                                                                                                                                                    |
+| POST   | `/sign-out`        | `{ "access_token": "...", "refresh_token": "..." }`                                                                                                                                             |
 
 POST bodies must be JSON and no larger than 16 KB. Sign-up passwords must be 8–128 characters; Supabase can enforce stricter rules. Sign-in accepts existing shorter passwords. Unknown fields are rejected.
+
+For app-specific password recovery, add the app origin to `AUTH_ALLOWED_ORIGINS` and its exact `return_to` URL to Supabase Redirect URLs. The return URL must use an allowed origin and have no query string or fragment. The email opens UseAuth for verification and password entry, then returns to that URL. Apps can link directly to `/forgot-password?return_to=https%3A%2F%2Fapp.example.com%2Fsign-in` to use the hosted request form. Without `return_to`, the user stays on UseAuth and can sign in there.
 
 `username` and `display_name` are optional at sign-up. Usernames are unique, normalized to lowercase, and may contain 3–30 letters, numbers, or underscores. Display names may contain up to 80 characters. Both are stored in Supabase user metadata and returned by `/me`, sign-in, and refresh as `username` and `display_name` (or `null` for older users). User metadata is editable by its owner, so consuming apps must not treat either field as an authorization claim. Apply the migration in `supabase/migrations` before deploying this version; it reserves usernames and keeps the reservation synchronized with metadata changes.
 
@@ -146,6 +160,6 @@ After configuring a project, test with a fresh email: sign up → open confirmat
 
 Configure custom SMTP and review Supabase's [rate limits](https://supabase.com/docs/guides/auth/rate-limits). The app maps credential provider rate limits to 429; it does not implement its own distributed IP throttle. Since Supabase is behind this server, consider an edge IP rate limit (Vercel Firewall) for public auth routes. To add CAPTCHA, extend the credentials schema and forward a verified `captchaToken` to Supabase after enabling its [bot protection](https://supabase.com/docs/guides/auth/auth-captcha).
 
-OAuth, password recovery, MFA, tenant management, admin APIs, and SSO handoff are future extensions.
+OAuth, MFA, tenant management, admin APIs, and SSO handoff are future extensions.
 
 Implementation follows Supabase's [server-side session guide](https://supabase.com/docs/guides/auth/server-side/creating-a-client?framework=nextjs) and [email template guide](https://supabase.com/docs/guides/auth/auth-email-templates).

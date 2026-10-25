@@ -154,7 +154,11 @@ export function AuthForm({
         />
         <div className="password-label">
           <label htmlFor="password">Password</label>
-          {signingUp && <span>At least 8 characters</span>}
+          {signingUp ? (
+            <span>At least 8 characters</span>
+          ) : (
+            <Link href="/forgot-password">Forgot password?</Link>
+          )}
         </div>
         <div className="password-input">
           <input

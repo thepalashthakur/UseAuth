@@ -953,6 +953,14 @@ h1 {
   font-size: 9px;
   color: #a7a0b2;
 }
+.password-label a {
+  font-size: 10px;
+  color: var(--purple);
+  font-weight: 600;
+}
+.recovery-confirm-label {
+  margin-top: 23px;
+}
 .password-input {
   position: relative;
 }

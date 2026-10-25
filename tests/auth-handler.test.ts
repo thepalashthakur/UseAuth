@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
     setSession: vi.fn(),
     signOut: vi.fn(),
     verifyOtp: vi.fn(),
+    resetPasswordForEmail: vi.fn(),
+    updateUser: vi.fn(),
   },
 }));
 vi.mock("@/lib/supabase/server", () => ({
@@ -17,7 +19,7 @@ vi.mock("@/lib/supabase/server", () => ({
   tokenClient: vi.fn(() => ({ auth: mocks.auth, rpc: mocks.rpc })),
 }));
 import { handleAuth } from "@/lib/auth-handler";
-import { allowedOrigin } from "@/lib/auth-contract";
+import { allowedOrigin, recoveryReturnUrl } from "@/lib/auth-contract";
 
 const user = {
   id: "user-1",
@@ -90,6 +92,21 @@ describe("authentication boundaries", () => {
         "https://app.example.com",
       ),
     ).toBe(false);
+  });
+  it("accepts only approved recovery return URLs", () => {
+    const allowed = "https://app.example.com";
+    expect(recoveryReturnUrl("https://app.example.com/sign-in", allowed)).toBe(
+      "https://app.example.com/sign-in",
+    );
+    for (const value of [
+      "https://app.example.com.evil.com/sign-in",
+      "https://app.example.com@evil.com/sign-in",
+      "https://app.example.com/sign-in?next=evil",
+      "https://app.example.com/sign-in?",
+      "https://app.example.com/sign-in#token",
+      "javascript:alert(1)",
+    ])
+      expect(recoveryReturnUrl(value, allowed)).toBeNull();
   });
   it("permits explicit CORS preflight without cookies", async () => {
     const response = await handleAuth(
@@ -173,6 +190,111 @@ describe("authentication boundaries", () => {
 });
 
 describe("credential and session flows", () => {
+  it("sends a recovery email without revealing whether the account exists", async () => {
+    mocks.auth.resetPasswordForEmail.mockResolvedValue({ error: null });
+    const response = await handleAuth(
+      request({ email: "TEST@example.com" }),
+      "forgot-password",
+      "token",
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.auth.resetPasswordForEmail).toHaveBeenCalledWith(
+      "test@example.com",
+      { redirectTo: "https://auth.example.com/auth/recovery" },
+    );
+    mocks.auth.resetPasswordForEmail.mockResolvedValue({
+      error: { status: 400 },
+    });
+    const unknown = await handleAuth(
+      request({ email: "TEST@example.com" }),
+      "forgot-password",
+      "token",
+    );
+    expect(await unknown.json()).toEqual(await response.json());
+  });
+  it("sends recovery back to an approved app without exposing the reset token", async () => {
+    mocks.auth.resetPasswordForEmail.mockResolvedValue({ error: null });
+    const response = await handleAuth(
+      request(
+        {
+          email: "test@example.com",
+          return_to: "https://app.example.com/sign-in",
+        },
+        { origin: "https://app.example.com" },
+      ),
+      "forgot-password",
+      "token",
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.auth.resetPasswordForEmail).toHaveBeenCalledWith(
+      "test@example.com",
+      { redirectTo: "https://app.example.com/sign-in" },
+    );
+  });
+  it("rejects unapproved and cross-app recovery destinations", async () => {
+    vi.stubEnv(
+      "AUTH_ALLOWED_ORIGINS",
+      "https://app.example.com,https://other.example.com",
+    );
+    for (const [return_to, origin] of [
+      ["https://evil.example.com/sign-in", "https://app.example.com"],
+      ["https://app.example.com.evil.com/sign-in", "https://app.example.com"],
+      ["https://app.example.com/sign-in", "https://other.example.com"],
+    ]) {
+      const response = await handleAuth(
+        request({ email: "test@example.com", return_to }, { origin }),
+        "forgot-password",
+        "token",
+      );
+      expect(response.status).toBe(400);
+    }
+    expect(mocks.auth.resetPasswordForEmail).not.toHaveBeenCalled();
+  });
+  it("requires a valid hosted session to update a password", async () => {
+    mocks.auth.getUser.mockResolvedValue({
+      data: { user: null },
+      error: { message: "expired" },
+    });
+    const input = request(
+      { password: "new-password" },
+      { origin: "https://auth.example.com" },
+    );
+    expect((await handleAuth(input, "reset-password", "cookie")).status).toBe(
+      401,
+    );
+    expect(mocks.auth.updateUser).not.toHaveBeenCalled();
+  });
+  it("updates the password and signs out the hosted session", async () => {
+    mocks.auth.getUser.mockResolvedValue({ data: { user }, error: null });
+    mocks.auth.updateUser.mockResolvedValue({ error: null });
+    mocks.auth.signOut.mockResolvedValue({ error: null });
+    const response = await handleAuth(
+      request(
+        { password: "new-password" },
+        { origin: "https://auth.example.com" },
+      ),
+      "reset-password",
+      "cookie",
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.auth.updateUser).toHaveBeenCalledWith({
+      password: "new-password",
+    });
+    expect(mocks.auth.signOut).toHaveBeenCalledWith({ scope: "local" });
+    expect(await response.json()).not.toHaveProperty("session");
+  });
+  it("does not expose password updates on the token API", async () => {
+    expect(
+      (
+        await handleAuth(
+          request({ password: "new-password" }),
+          "reset-password",
+          "token",
+        )
+      ).status,
+    ).toBe(404);
+    expect(mocks.auth.updateUser).not.toHaveBeenCalled();
+  });
   it("rejects invalid email, weak signup passwords, and unexpected input", async () => {
     for (const body of [
       { email: "invalid", password: "long-password" },

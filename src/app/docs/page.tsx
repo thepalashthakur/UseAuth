@@ -7,6 +7,11 @@ const login = `const res = await fetch(AUTH_URL + '/api/v1/auth/sign-in', {\n  m
 const endpoints = [
   ["POST", "sign-up", "Create an account; send a confirmation email."],
   ["POST", "sign-in", "Exchange email and password for a session."],
+  [
+    "POST",
+    "forgot-password",
+    "Email a link to the hosted password reset page.",
+  ],
   ["GET", "me", "Return the user for a Bearer access token."],
   ["POST", "refresh", "Rotate the session using a refresh token."],
   ["POST", "sign-out", "Revoke this session’s refresh token."],
@@ -67,7 +72,18 @@ export default function Docs() {
                   Set the Site URL to your service’s origin and allow{" "}
                   <code>https://your-service.vercel.app/auth/confirm</code> in
                   Redirect URLs. Add the localhost equivalent for development.
+                  For password recovery, add <code>/auth/recovery</code> for
+                  both origins. Add each consuming app’s exact return URL to
+                  Supabase Redirect URLs and set the Reset password email
+                  template to:
                 </p>
+                <pre>
+                  <code>
+                    {
+                      '<a href="{{ .SiteURL }}/auth/recovery?token_hash={{ .TokenHash }}&type=recovery&return_to={{ .RedirectTo }}">Reset your password</a>'
+                    }
+                  </code>
+                </pre>
               </li>
               <li>
                 <strong>Deploy to Vercel.</strong>
@@ -87,7 +103,7 @@ export default function Docs() {
           </section>
           <section id="endpoints" className="panel docs-section">
             <span className="small-label">02 / API REFERENCE</span>
-            <h2>Five endpoints. One identity.</h2>
+            <h2>Six endpoints. One identity.</h2>
             <p>
               Base path: <code>/api/v1/auth</code>. POST requests accept JSON.
               All session responses use{" "}
@@ -118,6 +134,16 @@ export default function Docs() {
                 <code>sign-up</code> also accepts optional <code>username</code>{" "}
                 and <code>display_name</code>. Usernames are unique, lowercase,
                 and 3–30 letters, numbers, or underscores.
+              </li>
+              <li>
+                <code>forgot-password</code>:{" "}
+                <code>
+                  {
+                    '{ "email": "you@example.com", "return_to": "https://app.example.com/sign-in" }'
+                  }
+                </code>
+                . The optional <code>return_to</code> sends the user back to an
+                approved app URL after the hosted reset.
               </li>
               <li>
                 <code>me</code>:{" "}

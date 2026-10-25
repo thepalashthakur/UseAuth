@@ -8,6 +8,9 @@ import {
   tokenSignup,
   refresh,
   logout,
+  forgotPassword,
+  resetPassword,
+  recoveryReturnUrl,
   publicUser,
   type AuthAction,
 } from "@/lib/auth-contract";
@@ -129,6 +132,83 @@ export async function handleAuth(
       if (error || !data.user)
         return fail("UNAUTHORIZED", "Your session is invalid or expired.", 401);
       return json({ user: publicUser(data.user) });
+    }
+    if (action === "forgot-password") {
+      const parsed = forgotPassword.safeParse(input);
+      if (!parsed.success)
+        return fail("VALIDATION_ERROR", parsed.error.issues[0].message, 400);
+      const returnTo = parsed.data.return_to
+        ? recoveryReturnUrl(
+            parsed.data.return_to,
+            process.env.AUTH_ALLOWED_ORIGINS,
+          )
+        : null;
+      if (parsed.data.return_to && !returnTo)
+        return fail(
+          "INVALID_RETURN_URL",
+          "Use a return_to URL on an allowed app origin without a query or fragment.",
+          400,
+        );
+      if (
+        origin &&
+        origin !== ownOrigin &&
+        returnTo &&
+        new URL(returnTo).origin !== origin
+      )
+        return fail(
+          "INVALID_RETURN_URL",
+          "The return_to origin must match the requesting app.",
+          400,
+        );
+      const { error } = await client.auth.resetPasswordForEmail(
+        parsed.data.email,
+        { redirectTo: returnTo ?? `${appOrigin()}/auth/recovery` },
+      );
+      if (error?.status === 429)
+        return fail(
+          "RATE_LIMITED",
+          "Too many attempts. Please try again later.",
+          429,
+        );
+      // Keep unknown addresses and other provider rejections indistinguishable.
+      return json({
+        message:
+          "If an account exists for this email, a password reset link will arrive shortly.",
+      });
+    }
+    if (action === "reset-password") {
+      if (mode === "token")
+        return fail("NOT_FOUND", "Use the hosted password reset link.", 404);
+      const parsed = resetPassword.safeParse(input);
+      if (!parsed.success)
+        return fail("VALIDATION_ERROR", parsed.error.issues[0].message, 400);
+      const { data, error: userError } = await client.auth.getUser();
+      if (userError || !data.user)
+        return fail(
+          "UNAUTHORIZED",
+          "Your reset link is invalid or expired. Request a new one.",
+          401,
+        );
+      const { error } = await client.auth.updateUser({
+        password: parsed.data.password,
+      });
+      if (error?.status === 429)
+        return fail(
+          "RATE_LIMITED",
+          "Too many attempts. Please try again later.",
+          429,
+        );
+      if (error)
+        return fail(
+          "RESET_FAILED",
+          "Unable to update your password. Please try again.",
+          400,
+        );
+      await client.auth.signOut({ scope: "local" });
+      return json({
+        message:
+          "Your password has been updated. Sign in with your new password.",
+      });
     }
     if (action === "sign-up" || action === "sign-in") {
       const parsed = (

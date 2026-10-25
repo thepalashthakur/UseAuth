@@ -40,9 +40,19 @@ export const refresh = z
 export const logout = refresh.extend({
   access_token: z.string().min(1).max(8192),
 });
+export const forgotPassword = credentials.pick({ email: true }).extend({
+  return_to: z.string().max(2048).optional(),
+});
+export const resetPassword = z
+  .object({
+    password: z.string().min(8, "Use at least 8 characters.").max(128),
+  })
+  .strict();
 export const actions = [
   "sign-up",
   "sign-in",
+  "forgot-password",
+  "reset-password",
   "refresh",
   "sign-out",
   "me",
@@ -63,6 +73,33 @@ export function allowedOrigin(
       .filter(Boolean)
       .includes(origin)
   );
+}
+
+export function recoveryReturnUrl(
+  value: string | null | undefined,
+  configured: string | undefined,
+) {
+  if (!value || value.length > 2048) return null;
+  try {
+    const url = new URL(value);
+    const origins = (configured ?? "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean);
+    if (
+      !origins.includes(url.origin) ||
+      !["https:", "http:"].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      /[?&#]/.test(url.href)
+    )
+      return null;
+    return url.href;
+  } catch {
+    return null;
+  }
 }
 
 export function publicUser(user: {
