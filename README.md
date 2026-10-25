@@ -84,8 +84,14 @@ Base URL: `https://your-auth-service.vercel.app/api/v1/auth`.
 | GET    | `/me`              | `Authorization: Bearer <access_token>`                                                                                                                                                          |
 | POST   | `/refresh`         | `{ "refresh_token": "..." }`                                                                                                                                                                    |
 | POST   | `/sign-out`        | `{ "access_token": "...", "refresh_token": "..." }`                                                                                                                                             |
+| POST   | `/change-password` | `{ "access_token": "...", "refresh_token": "...", "current_password": "...", "new_password": "...", "nonce": "optional" }` |
+| POST   | `/reauthenticate` | `{ "access_token": "...", "refresh_token": "..." }` — send a verification code when a password change requires one. |
+| POST   | `/update-profile` | `{ "access_token": "...", "refresh_token": "...", "display_name": "..." }` |
+| POST   | `/resend-confirmation` | `{ "email": "you@example.com" }` — generic response to avoid account enumeration. |
 
 POST bodies must be JSON and no larger than 16 KB. Sign-up passwords must be 8–128 characters; Supabase can enforce stricter rules. Sign-in accepts existing shorter passwords. Unknown fields are rejected.
+
+Auth POST responses include `X-Request-Id`. Server logs record only the request ID, action, mode, and status; do not add credentials, tokens, email addresses, or OTPs to these events.
 
 For app-specific password recovery, add the app origin to `AUTH_ALLOWED_ORIGINS` and its exact `return_to` URL to Supabase Redirect URLs. The return URL must use an allowed origin and have no query string or fragment. The email opens UseAuth for verification and password entry, then returns to that URL. Apps can link directly to `/forgot-password?return_to=https%3A%2F%2Fapp.example.com%2Fsign-in` to use the hosted request form. Without `return_to`, the user stays on UseAuth and can sign in there.
 

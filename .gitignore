@@ -9,3 +9,4 @@ out/
 coverage/
 .DS_Store
 artifacts/
+.vercel

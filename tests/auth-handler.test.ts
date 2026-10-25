@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
     resetPasswordForEmail: vi.fn(),
     updateUser: vi.fn(),
     getSession: vi.fn(),
+    reauthenticate: vi.fn(),
+    resend: vi.fn(),
   },
 }));
 vi.mock("next/headers", () => ({
@@ -224,6 +226,35 @@ describe("credential and session flows", () => {
     );
     expect(await unknown.json()).toEqual(await response.json());
   });
+  it("resends confirmation without disclosing account state", async () => {
+    mocks.auth.resend.mockResolvedValueOnce({ error: null }).mockResolvedValueOnce({
+      error: { status: 400, message: "unknown account" },
+    });
+    const first = await handleAuth(
+      request(
+        { email: "TEST@example.com" },
+        { origin: "https://auth.example.com" },
+      ),
+      "resend-confirmation",
+      "cookie",
+    );
+    const second = await handleAuth(
+      request(
+        { email: "TEST@example.com" },
+        { origin: "https://auth.example.com" },
+      ),
+      "resend-confirmation",
+      "cookie",
+    );
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(await second.json()).toEqual(await first.json());
+    expect(mocks.auth.resend).toHaveBeenCalledWith({
+      type: "signup",
+      email: "test@example.com",
+      options: { emailRedirectTo: "https://auth.example.com/auth/confirm" },
+    });
+  });
   it("does not send unusable recovery emails when the signing secret is missing", async () => {
     vi.stubEnv("RECOVERY_GRANT_SECRET", "");
     const response = await handleAuth(
@@ -312,6 +343,28 @@ describe("credential and session flows", () => {
     expect(mocks.cookieDelete).toHaveBeenCalledWith("useauth-recovery");
     expect(await response.json()).not.toHaveProperty("session");
   });
+  it("reports a failed sign-out after reset and clears the recovery grant", async () => {
+    mocks.auth.getUser.mockResolvedValue({ data: { user }, error: null });
+    mocks.auth.getSession.mockResolvedValue({
+      data: { session: { ...session, user } },
+    });
+    mocks.cookieGet.mockReturnValue({
+      value: createRecoveryGrant(session.access_token, user.id),
+    });
+    mocks.auth.updateUser.mockResolvedValue({ error: null });
+    mocks.auth.signOut.mockResolvedValue({ error: { status: 500 } });
+    const response = await handleAuth(
+      request(
+        { password: "new-password" },
+        { origin: "https://auth.example.com" },
+      ),
+      "reset-password",
+      "cookie",
+    );
+    expect(response.status).toBe(502);
+    expect(mocks.cookieDelete).toHaveBeenCalledWith("useauth-recovery");
+    expect((await response.json()).error.code).toBe("RESET_SESSION_FAILED");
+  });
   it("rejects a normal signed-in session without a recovery grant", async () => {
     mocks.auth.getUser.mockResolvedValue({ data: { user }, error: null });
     mocks.auth.getSession.mockResolvedValue({
@@ -360,9 +413,10 @@ describe("credential and session flows", () => {
   it("changes the password after verifying the current password", async () => {
     mocks.auth.getUser.mockResolvedValue({ data: { user }, error: null });
     mocks.auth.signInWithPassword.mockResolvedValue({
-      data: { user },
+      data: { user, session },
       error: null,
     });
+    mocks.auth.signOut.mockResolvedValue({ error: null });
     mocks.auth.updateUser.mockResolvedValue({ error: null });
     const response = await handleAuth(
       request(
@@ -381,16 +435,93 @@ describe("credential and session flows", () => {
       password: "new-password",
       current_password: "old-password",
     });
+    expect(mocks.auth.signOut).toHaveBeenCalledWith({ scope: "local" });
     expect(await response.json()).not.toHaveProperty("session");
   });
-  it("keeps password changes on the hosted account route", async () => {
+  it("requires a token session and new_password for app password changes", async () => {
     const response = await handleAuth(
       request({ current_password: "old-password", password: "new-password" }),
       "change-password",
       "token",
     );
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(400);
     expect(mocks.auth.updateUser).not.toHaveBeenCalled();
+  });
+  it("changes an app password only after verifying its current value", async () => {
+    mocks.auth.setSession.mockResolvedValue({
+      data: { session, user },
+      error: null,
+    });
+    mocks.auth.signInWithPassword.mockResolvedValue({
+      data: { user, session },
+      error: null,
+    });
+    mocks.auth.signOut.mockResolvedValue({ error: null });
+    mocks.auth.updateUser.mockResolvedValue({ data: { user }, error: null });
+    const response = await handleAuth(
+      request({
+        access_token: "access",
+        refresh_token: "refresh",
+        current_password: "old-password",
+        new_password: "new-password",
+      }),
+      "change-password",
+      "token",
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.auth.updateUser).toHaveBeenCalledWith({
+      password: "new-password",
+      current_password: "old-password",
+    });
+    expect(mocks.auth.signOut).toHaveBeenCalledWith({ scope: "local" });
+    expect((await response.json()).session.refresh_token).toBe("refresh");
+  });
+  it("rejects an incorrect current password from an app", async () => {
+    mocks.auth.setSession.mockResolvedValue({
+      data: { session, user },
+      error: null,
+    });
+    mocks.auth.signInWithPassword.mockResolvedValue({
+      data: { user: null },
+      error: { status: 400 },
+    });
+    const response = await handleAuth(
+      request({
+        access_token: "access",
+        refresh_token: "refresh",
+        current_password: "wrong-password",
+        new_password: "new-password",
+      }),
+      "change-password",
+      "token",
+    );
+    expect(response.status).toBe(401);
+    expect(mocks.auth.updateUser).not.toHaveBeenCalled();
+  });
+  it("supports app reauthentication and profile updates", async () => {
+    mocks.auth.setSession.mockResolvedValue({
+      data: { session, user },
+      error: null,
+    });
+    mocks.auth.reauthenticate.mockResolvedValue({ error: null });
+    mocks.auth.updateUser.mockResolvedValue({ data: { user }, error: null });
+    const tokens = { access_token: "access", refresh_token: "refresh" };
+    const reauth = await handleAuth(
+      request(tokens),
+      "reauthenticate",
+      "token",
+    );
+    const profile = await handleAuth(
+      request({ ...tokens, display_name: "New Name" }),
+      "update-profile",
+      "token",
+    );
+    expect(reauth.status).toBe(200);
+    expect(mocks.auth.reauthenticate).toHaveBeenCalledOnce();
+    expect(profile.status).toBe(200);
+    expect(mocks.auth.updateUser).toHaveBeenCalledWith({
+      data: { display_name: "New Name" },
+    });
   });
   it("rejects invalid email, weak signup passwords, and unexpected input", async () => {
     for (const body of [

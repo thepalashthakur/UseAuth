@@ -29,6 +29,8 @@ export function AuthForm({
       : "",
   );
   const [confirmation, setConfirmation] = useState(false);
+  const [confirmationEmail, setConfirmationEmail] = useState("");
+  const [resendFeedback, setResendFeedback] = useState("");
   const signingUp = mode === "sign-up";
 
   async function submit(event: React.SubmitEvent<HTMLFormElement>) {
@@ -60,6 +62,7 @@ export function AuthForm({
         return;
       }
       if (body.confirmation_required) {
+        setConfirmationEmail(String(form.get("email")).trim());
         setConfirmation(true);
         return;
       }
@@ -69,6 +72,29 @@ export function AuthForm({
       setError(
         "Could not reach the service. Check your connection and try again.",
       );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function resendConfirmation() {
+    if (pending || !confirmationEmail) return;
+    setPending(true);
+    setResendFeedback("");
+    try {
+      const response = await fetch("/api/browser/auth/resend-confirmation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: confirmationEmail }),
+      });
+      const body = await response.json();
+      setResendFeedback(
+        response.ok
+          ? body.message
+          : body.error?.message ?? "Unable to resend confirmation.",
+      );
+    } catch {
+      setResendFeedback("Could not reach the service. Please try again.");
     } finally {
       setPending(false);
     }
@@ -85,6 +111,15 @@ export function AuthForm({
           If this address can be registered, you’ll receive a confirmation link
           shortly. Open it to finish creating your account.
         </p>
+        <button
+          type="button"
+          className="button secondary"
+          onClick={resendConfirmation}
+          disabled={pending}
+        >
+          {pending ? "Sending…" : "Resend confirmation"}
+        </button>
+        {resendFeedback && <p role="status">{resendFeedback}</p>}
         <Link href="/sign-in" className="button primary">
           Back to sign in <ArrowRight size={16} />
         </Link>

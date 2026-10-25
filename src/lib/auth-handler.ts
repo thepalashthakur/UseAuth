@@ -11,6 +11,8 @@ import {
   forgotPassword,
   resetPassword,
   changePassword,
+  tokenPasswordChange,
+  tokenProfileUpdate,
   recoveryReturnUrl,
   publicUser,
   type AuthAction,
@@ -47,8 +49,19 @@ export async function handleAuth(
     "Cache-Control": "private, no-store",
     Vary: "Origin",
   };
-  const json = (body: unknown, status = 200) =>
-    NextResponse.json(body, { status, headers });
+  const requestId = crypto.randomUUID();
+  headers["X-Request-Id"] = requestId;
+  const json = (body: unknown, status = 200) => {
+    if (request.method === "POST")
+      console.info(JSON.stringify({
+        event: "auth_request",
+        request_id: requestId,
+        action,
+        mode,
+        status,
+      }));
+    return NextResponse.json(body, { status, headers });
+  };
   const fail = (code: string, message: string, status: number) =>
     json({ error: { code, message } }, status);
 
@@ -189,6 +202,23 @@ export async function handleAuth(
           "If an account exists for this email, a password reset link will arrive shortly.",
       });
     }
+    if (action === "resend-confirmation") {
+      const parsed = forgotPassword.pick({ email: true }).safeParse(input);
+      if (!parsed.success)
+        return fail("VALIDATION_ERROR", parsed.error.issues[0].message, 400);
+      const { error } = await client.auth.resend({
+        type: "signup",
+        email: parsed.data.email,
+        options: { emailRedirectTo: `${appOrigin()}/auth/confirm` },
+      });
+      if (error?.status === 429)
+        return fail("RATE_LIMITED", "Too many attempts. Please try again later.", 429);
+      // Do not reveal whether an account exists or has already been verified.
+      return json({
+        message:
+          "If this address needs confirmation, a new link will arrive shortly.",
+      });
+    }
     if (action === "reset-password") {
       if (mode === "token")
         return fail("NOT_FOUND", "Use the hosted password reset link.", 404);
@@ -234,16 +264,71 @@ export async function handleAuth(
           "Unable to update your password. Please try again.",
           400,
         );
-      await client.auth.signOut({ scope: "local" });
+      const { error: signOutError } = await client.auth.signOut({ scope: "local" });
       store.delete(recoveryCookie);
+      if (signOutError)
+        return fail(
+          "RESET_SESSION_FAILED",
+          "Your password changed, but this session could not be closed. Sign out and sign in again.",
+          502,
+        );
       return json({
         message:
           "Your password has been updated. Sign in with your new password.",
       });
     }
     if (action === "change-password") {
-      if (mode === "token")
-        return fail("NOT_FOUND", "Use the hosted account page.", 404);
+      if (mode === "token") {
+        const parsed = tokenPasswordChange.safeParse(input);
+        if (!parsed.success)
+          return fail("VALIDATION_ERROR", "Invalid password request.", 400);
+        const { access_token, refresh_token, current_password, new_password, nonce } =
+          parsed.data;
+        const { data: active, error: sessionError } = await client.auth.setSession({
+          access_token,
+          refresh_token,
+        });
+        if (sessionError || !active.session || !active.user?.email)
+          return fail("UNAUTHORIZED", "Your session is invalid or expired.", 401);
+        const verifier = tokenClient();
+        const check = await verifier.auth.signInWithPassword({
+          email: active.user.email,
+          password: current_password,
+        });
+        if (check.data?.session) {
+          const { error: cleanupError } = await verifier.auth.signOut({ scope: "local" });
+          if (cleanupError)
+            return fail("VERIFICATION_SESSION_FAILED", "Unable to finish password verification. Try again.", 502);
+        }
+        if (check.error?.status === 429)
+          return fail("RATE_LIMITED", "Too many attempts. Try again later.", 429);
+        if (check.error || check.data.user?.id !== active.user.id)
+          return fail("INVALID_CREDENTIALS", "Current password is incorrect.", 401);
+        const { data, error } = await client.auth.updateUser({
+          password: new_password,
+          current_password,
+          ...(nonce ? { nonce } : {}),
+        });
+        if (error?.code === "reauthentication_needed")
+          return fail(
+            "reauthentication_needed",
+            "A verification code is required to change your password.",
+            403,
+          );
+        if (error?.status === 429)
+          return fail("RATE_LIMITED", "Too many attempts. Try again later.", 429);
+        if (error || !data.user)
+          return fail(
+            "CHANGE_PASSWORD_FAILED",
+            "Unable to change your password. Please try again.",
+            400,
+          );
+        return json({
+          user: publicUser(data.user),
+          session: sessionData(active.session),
+          message: "Your password has been changed.",
+        });
+      }
       const parsed = changePassword.safeParse(input);
       if (!parsed.success)
         return fail("VALIDATION_ERROR", parsed.error.issues[0].message, 400);
@@ -254,10 +339,16 @@ export async function handleAuth(
           "Sign in again to change your password.",
           401,
         );
-      const check = await tokenClient().auth.signInWithPassword({
+      const verifier = tokenClient();
+      const check = await verifier.auth.signInWithPassword({
         email: data.user.email,
         password: parsed.data.current_password,
       });
+      if (check.data?.session) {
+        const { error: cleanupError } = await verifier.auth.signOut({ scope: "local" });
+        if (cleanupError)
+          return fail("VERIFICATION_SESSION_FAILED", "Unable to finish password verification. Try again.", 502);
+      }
       if (check.error?.status === 429)
         return fail(
           "RATE_LIMITED",
@@ -287,6 +378,48 @@ export async function handleAuth(
           400,
         );
       return json({ message: "Your password has been changed." });
+    }
+    if (action === "reauthenticate" || action === "update-profile") {
+      if (mode === "cookie")
+        return fail("NOT_FOUND", "Use the account page.", 404);
+      const parsed = (
+        action === "reauthenticate" ? logout : tokenProfileUpdate
+      ).safeParse(input);
+      if (!parsed.success)
+        return fail("VALIDATION_ERROR", "Invalid account request.", 400);
+      const { data: active, error: sessionError } = await client.auth.setSession({
+        access_token: parsed.data.access_token,
+        refresh_token: parsed.data.refresh_token,
+      });
+      if (sessionError || !active.session || !active.user)
+        return fail("UNAUTHORIZED", "Your session is invalid or expired.", 401);
+      if (action === "reauthenticate") {
+        const { error } = await client.auth.reauthenticate();
+        if (error?.status === 429)
+          return fail("RATE_LIMITED", "Too many attempts. Try again later.", 429);
+        if (error)
+          return fail(
+            "REAUTHENTICATION_FAILED",
+            "Unable to send a verification code. Please try again.",
+            400,
+          );
+        return json({
+          message: "Verification code sent.",
+          session: sessionData(active.session),
+        });
+      }
+      if (!("display_name" in parsed.data))
+        return fail("VALIDATION_ERROR", "Invalid account request.", 400);
+      const { data, error } = await client.auth.updateUser({
+        data: { display_name: parsed.data.display_name },
+      });
+      if (error || !data.user)
+        return fail(
+          "PROFILE_UPDATE_FAILED",
+          "Unable to update your profile. Please try again.",
+          400,
+        );
+      return json({ user: publicUser(data.user), session: sessionData(active.session) });
     }
     if (action === "sign-up" || action === "sign-in") {
       const parsed = (

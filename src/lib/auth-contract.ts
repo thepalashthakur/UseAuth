@@ -54,12 +54,23 @@ export const changePassword = z
     password: z.string().min(8, "Use at least 8 characters.").max(128),
   })
   .strict();
+export const tokenPasswordChange = logout.extend({
+  current_password: z.string().min(1).max(128),
+  new_password: z.string().min(8, "Use at least 8 characters.").max(128),
+  nonce: z.string().trim().min(1).max(20).optional(),
+});
+export const tokenProfileUpdate = logout.extend({
+  display_name: z.string().trim().max(80),
+});
 export const actions = [
   "sign-up",
   "sign-in",
   "forgot-password",
   "reset-password",
   "change-password",
+  "reauthenticate",
+  "update-profile",
+  "resend-confirmation",
   "refresh",
   "sign-out",
   "me",
