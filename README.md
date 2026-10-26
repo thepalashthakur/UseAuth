@@ -62,7 +62,7 @@ The recovery callback verifies the one-time hash, creates a hosted session, and 
 
 Signed-in users can change their password from `/account` by providing their current password. Email recovery uses a short-lived, server-signed grant so an ordinary signed-in session cannot submit a recovery reset.
 
-4. Apply `supabase/migrations/20261006000000_unique_usernames.sql` to the project using `supabase db push` before deploying this version. The migration reserves usernames case-insensitively and adds an availability check for signup. It can fail if existing users already have duplicate username metadata; resolve those duplicates before retrying.
+4. Apply `supabase/migrations/20261006000000_unique_usernames.sql` and then `supabase/migrations/20261026000000_application_access.sql` to the project before deploying the consuming apps. The first reserves usernames case-insensitively; the second registers apps and grants user access. Review the Phase 2 preflight, policy, and rollback in [docs/PHASE2_ACCESS.md](docs/PHASE2_ACCESS.md).
 
 ## Deploy on Vercel
 

@@ -20,7 +20,7 @@ flowchart LR
 
 - **Supabase Auth** remains the identity, password, OTP, refresh-token, OAuth code, access-token and ID-token issuer. No custom hashing, OAuth authorization server, code exchange service, or refresh-token issuer is proposed.
 - **UseAuth on Vercel** owns hosted registration/login/recovery/account UI, an OAuth authorization and consent UI, application policy checks, administrative registration UX, and redacted security events. It uses the same Supabase project and a host-only authenticated cookie for its own UI.
-- **Consuming applications** are registered OAuth clients. Each owns its app session, business roles/permissions, and data access. A successful UseAuth login proves identity; access to an app requires an active client and explicit membership/policy decision.
+- **Consuming applications** are registered OAuth clients. Each owns its app session, business roles/permissions, and data access. A successful UseAuth login proves identity; access to an app requires an active registered app and active membership, which the current test policy grants automatically.
 - **Postgres/RLS** is an enforcement boundary for shared Supabase data, not merely a profile store. Existing table policies must be inventoried and amended deliberately. Server APIs must also enforce app access and resource audience; CORS does not authenticate a client.
 
 ## Choice of protocol and current limits
@@ -46,7 +46,7 @@ Existing app-specific role and permission tables may already live in the shared 
 ## Authentication and registration flows
 
 1. A user visits UseAuth directly or starts an OAuth authorization request from a registered app.
-2. Existing hosted email/password registration calls Supabase `signUp`. Supabase sends confirmation email; UseAuth verifies the one-time hash at `/auth/confirm` and establishes only the UseAuth hosted session. A user is **not** auto-enrolled into every app. Optional app invitation/self-enrollment policy is evaluated separately.
+2. Existing hosted email/password registration calls Supabase `signUp`. Supabase sends confirmation email; UseAuth verifies the one-time hash at `/auth/confirm` and establishes only the UseAuth hosted session. In the current test setup, a confirmed user is automatically enrolled in every active registered app. App access is checked by each consumer; a revoked or missing membership is denied.
 3. Hosted login calls Supabase `signInWithPassword` and stores its own session in host-only HttpOnly/Secure/SameSite cookies. `/account` calls `getUser` server-side. A newly introduced resend-verification flow would use Supabase's supported resend method after rate-limit and enumeration review.
 4. Existing `/api/v1/auth` credential endpoints remain during migration. They are not SSO and do not identify a registered app. New integrations should use OAuth/OIDC, not copy this contract.
 
@@ -76,7 +76,7 @@ Supabase rotates refresh tokens and controls access-token expiry. App BFFs rotat
 
 ## Application registration and operating policy
 
-An authorized platform administrator registers one Supabase OAuth client **per application/environment** (public or confidential) with exact HTTPS redirects, approved ownership, secret storage/rotation and a matching internal app record. Callback URLs in Supabase OAuth client settings are separate from the existing Auth email Redirect URLs. Production forbids wildcard callback URIs. Disable/deactivate a client by blocking consent and API access; determine whether Supabase client revocation and existing refresh sessions also require revocation. Audit all registration, grant, suspension and secret-rotation actions. No public self-service registration or automatic membership grant is assumed for the MVP.
+An authorized platform administrator registers one Supabase OAuth client **per application/environment** (public or confidential) with exact HTTPS redirects, approved ownership, secret storage/rotation and a matching internal app record. Callback URLs in Supabase OAuth client settings are separate from the existing Auth email Redirect URLs. Production forbids wildcard callback URIs. Disable/deactivate a client by blocking consent and API access; determine whether Supabase client revocation and existing refresh sessions also require revocation. Audit all registration, grant, suspension and secret-rotation actions. The current test policy automatically grants membership for active registered apps, including future apps. The owner registers apps through SQL; there is no public self-service registration. Review automatic grants before onboarding real users or third-party apps.
 
 ## Failure and abuse handling
 
