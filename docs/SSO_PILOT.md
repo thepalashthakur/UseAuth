@@ -24,6 +24,12 @@ The pushed annotated tag `pre-sso-2026-10-26` records the working release in Use
 
 ## Configuration and access gate
 
+### Live inventory, 2026-10-27
+
+Read-only checks on Supabase project `mxooeohiyoyguugkutzi` found 16 relevant `tracker_*` and `timelogger_time_entries` policies; RLS is enabled on all related tables. The shared habit-timer column and three timer RPCs are present. The 11 privileged RPCs that the migration would replace match the checked-in bodies exactly except `tracker_transition_habit_timer`, whose body differs only in whitespace after normalization. The two registered apps are active with automatic enrollment; one user has two memberships. The new `oauth_clients` table does not exist yet. Supabase OAuth Server is disabled and has no registered OAuth apps. The Site URL is `https://use-auth-rosy.vercel.app`, with confirmation and recovery as the two Auth redirect URLs. No live configuration or schema was changed during this inventory.
+
+Because Supabase combines the Site URL with the OAuth Authorization Path, `/oauth/consent` must be deployed to the existing UseAuth production origin before the server can route a MyHabits preview pilot. [The staged consent PR](https://github.com/thepalashthakur/UseAuth/pull/2) contains only dormant code; the database migration and OAuth enablement remain separate gates.
+
 - Use one OAuth client per app and environment. Register exact HTTPS callbacks only. Store client secrets in server-only Vercel environment variables.
 - The new private `auth_platform.oauth_clients` table maps each exact preview or production client ID and callback to one existing app. The old single `applications.oauth_client_id` column cannot represent both preview and production clients and is not used for the pilot. OAuth data access stays denied until the new client row is active.
 - Set Supabase Site URL to the UseAuth origin and OAuth Authorization Path to `/oauth/consent`. The project's ES256 signing key supports OIDC ID tokens.
