@@ -15,10 +15,12 @@ export function AuthForm({
   mode,
   configured,
   confirmationError = false,
+  next,
 }: {
   mode: "sign-in" | "sign-up";
   configured: boolean;
   confirmationError?: boolean;
+  next?: string;
 }) {
   const router = useRouter();
   const [visible, setVisible] = useState(false);
@@ -66,7 +68,7 @@ export function AuthForm({
         setConfirmation(true);
         return;
       }
-      router.replace("/account");
+      router.replace(next ?? "/account");
       router.refresh();
     } catch {
       setError(
@@ -120,7 +122,7 @@ export function AuthForm({
           {pending ? "Sending…" : "Resend confirmation"}
         </button>
         {resendFeedback && <p role="status">{resendFeedback}</p>}
-        <Link href="/sign-in" className="button primary">
+        <Link href={next ? `/sign-in?next=${encodeURIComponent(next)}` : "/sign-in"} className="button primary">
           Back to sign in <ArrowRight size={16} />
         </Link>
       </div>
@@ -242,7 +244,7 @@ export function AuthForm({
       </form>
       <p className="auth-switch">
         {signingUp ? "Already have an account?" : "New to UseAuth?"}{" "}
-        <Link href={signingUp ? "/sign-in" : "/sign-up"}>
+        <Link href={signingUp ? (next ? `/sign-in?next=${encodeURIComponent(next)}` : "/sign-in") : (next ? `/sign-up?next=${encodeURIComponent(next)}` : "/sign-up")}>
           {signingUp ? "Sign in" : "Create an account"}
         </Link>
       </p>
