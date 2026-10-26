@@ -1,6 +1,6 @@
 # Proposed centralized authentication architecture
 
-**Proposal only — Phase 1 design for review (2026-10-25).** No OAuth server, app registry, membership schema, SDK, or consent screen has been implemented. The existing service and constraints are documented in [AUDIT_REPORT.md](AUDIT_REPORT.md). This design requires live Supabase project capability and database review before implementation.
+**Historical OAuth proposal (2026-10-25).** The app registry and memberships were implemented in Phase 2. The OAuth server, SDK, and consent screen were not implemented. On 2026-10-26, the owner requested a reliability-first alternative to Supabase OAuth Server beta; [the Phase 3 plan](PHASE3_RELIABLE_AUTH_PLAN.md) is the current roadmap. The OAuth design below remains a reference for a future standards-based SSO pilot, subject to provider and database migration review.
 
 ## System boundaries
 

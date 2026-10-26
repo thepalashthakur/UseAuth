@@ -1,6 +1,6 @@
 # UseAuth implementation plan
 
-**Status:** Phase 2 complete for the current test setup, updated 2026-10-26. **Phase 0 is complete for the current test-only setup.** The owner confirmed all current apps and data are for testing and the data may be deleted. Findings and the reset boundary are in [PHASE0_INVENTORY.md](PHASE0_INVENTORY.md); the earlier [repository audit](AUDIT_REPORT.md) and [architecture proposal](ARCHITECTURE.md) provide more detail.
+**Status:** Phase 3 planning, updated 2026-10-26. **Phase 0 is complete for the current test-only setup.** The owner confirmed all current apps and data are for testing and the data may be deleted. Findings and the reset boundary are in [PHASE0_INVENTORY.md](PHASE0_INVENTORY.md); the earlier [repository audit](AUDIT_REPORT.md) and [architecture proposal](ARCHITECTURE.md) provide more detail.
 
 ## Progress tracker
 
@@ -14,7 +14,7 @@ Check an item only after its acceptance check has passed, and add the date plus 
 - [x] Verify live Time Logger table presence, RLS flags/policies/grants, and `auth.users` trigger/foreign-key counts.
 - [x] Identify the relevant shared-database dependencies: 47 public tables reference `auth.users`; all have RLS enabled, including the 13 Time Logger tables. See [PHASE0_INVENTORY.md](PHASE0_INVENTORY.md).
 - [x] Identify configured UseAuth consumers, their domains, token storage, and API access paths: Time Logger and MyJournal/Stillroom.
-- [x] Record the test-only, disposable-data decision and the reset boundary. Full policy review of retained non-Time-Logger tables moves to Phase 4 before their OAuth access is enabled.
+- [x] Record the test-only, disposable-data decision and the reset boundary. Full policy review of retained non-Time-Logger tables moves to Phase 4 before adding another app or identity provider.
 
 ### Phase 1 — Existing flow stabilization
 
@@ -33,39 +33,39 @@ Check an item only after its acceptance check has passed, and add the date plus 
 - [x] Review the narrow registry/membership migration and its RLS against the live schema. It backfills existing users without deleting test data.
 - [x] Prove unknown/inactive apps and users without membership are denied without breaking existing consumers. Inactive and future-app cases passed in isolated PostgreSQL; live unknown and revoked cases passed.
 
-### Phase 3 — OAuth/OIDC pilot
+### Phase 3 — Reliable shared authentication
 
-- [ ] Enable and verify Supabase OAuth Server in the current test project; confirm its existing ES256 signing works for OIDC.
-- [ ] Register one development client with an exact callback URL.
-- [ ] Implement hosted authorization/consent UI that obtains verified request details from Supabase and checks app membership.
-- [ ] Integrate one Next.js consumer using authorization code + PKCE and an app-owned server session.
-- [ ] Reject wrong client, redirect, state, nonce, PKCE verifier, issuer, audience, inactive app, and nonmember.
+- [x] Compare the beta OAuth path with stable alternatives and record the current decision. See [PHASE3_RELIABLE_AUTH_PLAN.md](PHASE3_RELIABLE_AUTH_PLAN.md).
+- [ ] Freeze the existing UseAuth and consumer auth/session contracts and inventory legacy token paths.
+- [ ] Add verified, app-aware return after confirmation and password recovery.
+- [ ] Harden app session refresh, denial cleanup, cookies, CSRF, and logout behavior.
+- [ ] Verify signup, login, confirmation, reset, password change, refresh, and logout from both apps with disposable accounts.
 
-### Phase 4 — Multi-app rollout
+### Phase 4 — Shared-data isolation and app rollout
 
-- [ ] Register a separate OAuth client for each app and environment with exact HTTPS callbacks.
-- [ ] Enforce `client_id`, resource audience/policy, app membership, and user ownership in each API and relevant RLS policy.
-- [ ] Verify App A's token cannot access App B's APIs or rows; test same-domain and unrelated-domain browser flows.
-- [ ] Define app logout, UseAuth logout, global logout, session revocation, and the legacy token API migration schedule.
-- [ ] Migrate consuming apps one at a time with rollback controls.
+- [ ] Inventory every direct Data API, RPC, Realtime, service-role, and personal-token path.
+- [ ] Enforce current app membership and row ownership in relevant RLS and server APIs; prove revocation blocks an already-issued token.
+- [ ] Add a third test app using the documented registry and auth contract, then test app-specific origin/return and data isolation.
 
-### Phase 5 — Reusable integration
+### Phase 5 — Optional standards-based SSO
 
-- [ ] Publish a small OAuth client core and Next.js server adapter for redirect, callback validation, session, refresh, and logout.
-- [ ] Provide a working example app and configuration guide for app owners.
-- [ ] Verify no client secret or refresh token reaches browser storage or logs.
+- [ ] Decide whether seamless cross-app sign-in is required and select a generally available OIDC provider only after the [Phase 3 decision gate](PHASE3_RELIABLE_AUTH_PLAN.md#later-sso-decision-gate).
+- [ ] In an isolated test environment, prove external-subject mapping to the UUID-based schema and migrate all affected foreign keys and RLS checks.
+- [ ] Pilot one app with provider SDK, exact callbacks, app-owned session, token validation, and negative security cases; roll out a second app only after the first passes.
+- [ ] Publish a reusable adapter only after the protocol and session contract are stable.
 
 ### Phase 6 — Security and operations
 
 - [ ] Run the negative security test matrix and document remaining risks.
 - [ ] Configure alerting, redacted audit events, health checks, and operational ownership.
-- [ ] Document staging/production setup, key and client-secret rotation, backup, rollback, and incident response.
+- [ ] Document staging/production setup, key rotation, backup, rollback, and incident response.
 - [ ] Complete staging and production smoke tests and a rollback drill.
 
 ## Change log
 
 | Date | Phase/item | Change and verification evidence |
 | --- | --- | --- |
+| 2026-10-26 | Phase 3: reliability decision | Deferred Supabase OAuth Server beta and kept Supabase Auth as the current password/session authority. Compared stable third-party OIDC routes and recorded the UUID foreign-key/RLS migration required before changing identity providers. No live settings, schema, or application code changed. See [PHASE3_RELIABLE_AUTH_PLAN.md](PHASE3_RELIABLE_AUTH_PLAN.md). |
 | 2026-10-26 | Phase 2: app access model | Applied `20261026000000_application_access.sql` to test project `mxooeohiyoyguugkutzi`: private registry/membership tables, RLS, scoped boolean RPCs, automatic user and future-app grants, and active Time Logger/MyHabits records. Verified both table RLS flags, RPC grants, and ordinary-user denial of the service-role RPC. Isolated PostgreSQL checks passed for automatic grants, future app activation, inactive/unknown apps, and revoked memberships. A disposable live user received both grants and could sign in to both staged and public consumer deployments; an unknown app returned false, and revoking memberships made both staged sign-ins return HTTP 403. Restored memberships, explicitly mapped Time Logger public/team aliases to its tested deployment, verified a second disposable user could sign in on both public domains (HTTP 200), then deleted the disposable users. Time Logger tests/typecheck/build, MyHabits tests/lint/typecheck/build, and UseAuth lint/build passed. Consumer deployments: Time Logger `dpl_EeaZbaQqQdMtP7qRCTZEwFB9PFYU`, MyHabits `dpl_55txZRFrj5t7ZzeVWpuAKa1Ly9JV`. Direct shared-database RLS/client isolation remains Phase 4. |
 | 2026-10-25 | Phase 0: repository audit | Repository review recorded in [AUDIT_REPORT.md](AUDIT_REPORT.md). Live Supabase and database state remain unverified. |
 | 2026-10-25 | Phase 0: Time Logger inventory | Read-only source, Vercel metadata, and limited live Supabase checks recorded in [PHASE0_INVENTORY.md](PHASE0_INVENTORY.md). Live RLS and dashboard-only settings remain open. |
@@ -90,43 +90,43 @@ Check an item only after its acceptance check has passed, and add the date plus 
 
 Keep Supabase Auth as the password, OTP, session, refresh, and token issuer. Retain the hosted account/registration/recovery UI, `/api/v1/auth` contract while consumers migrate, and the current mobile confirmation callbacks. Existing test identities and rows may be reset; `public.usernames` was added in Phase 1. Verify exact deletion scope before resetting anything, and review retained RLS policies before exposing new OAuth clients. Do not publish an SDK that implies SSO before a standards-based flow exists.
 
-The target is a centralized identity service with registered OAuth clients, an application membership decision, and each app's own session and authorization layer. Supabase OAuth 2.1/OIDC (currently documented as **beta**) is the preferred authorization server, subject to project-level enablement and compatibility verification. UseAuth would provide sign-in/consent UX and policy checks; it would not mint authorization codes or refresh tokens. [Supabase OAuth Server](https://supabase.com/docs/guides/auth/oauth-server), [getting started](https://supabase.com/docs/guides/auth/oauth-server/getting-started).
+The current target is a reliable shared Supabase Auth identity with registered apps, app-owned sessions, and enforceable memberships. The OAuth/OIDC pilot is deferred because Supabase labels its authorization server beta. Phase 3 strengthens the working flow; standards-based SSO is an optional later migration with a separate decision gate. See [PHASE3_RELIABLE_AUTH_PLAN.md](PHASE3_RELIABLE_AUTH_PLAN.md).
 
 ## Ordered phases and dependencies
 
-| Phase                          | Work                                                                                                                                                                                                                                                                                                              | Depends on                                                          | Acceptance gate                                                                                                                                                                                                                    |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0. Baseline and evidence       | Complete repository audit, live Auth and relevant schema/RLS inventory, and configured-consumer discovery. Record the disposable-data decision.                                                                                                                                                                     | Read-only access to project metadata and owner scope decision.      | Relevant clients and shared `auth.users` dependencies are recorded; test-data reset boundary is explicit. **Complete for current test setup.**                                                                                     |
-| 1. Existing flow stabilization | Patch dependency advisories; verify email templates/redirects/SMTP; fix reset sign-out failure behavior and hosted refresh coverage; add resend verification, abuse controls, security event format, and critical browser/provider tests. Retain API and UI contracts.                                            | Phase 0 metadata; test Supabase project and mailboxes.              | No known critical production dependency advisory; real sign-up → confirmation → login → account → change/reset → logout works; expired session tested; rate limit and CSRF negative tests pass.                                    |
-| 2. Application access model    | Design and review registered-app mapping, active flag, redirect URI ownership, user-app memberships, admin roles, and policy decisions. Add narrowly scoped migrations only after preflight/backup/rollback review.                                                                                               | Phase 0 inventory; app owner/access policy decisions.               | An active registered app plus active membership is required; automatic grants cover current and future active apps; inactive/unknown app and nonmember are denied in tests; existing apps retain access during staged rollout.                                                          |
-| 3. OAuth/OIDC pilot            | Verify Supabase OAuth Server is enabled/available in this project, signing key is asymmetric for OIDC, and installed SDK exposes consent methods. Register one dev client via Supabase's client registry, implement hosted authorization/consent UI with server-side membership check, code+PKCE client callback. | Phase 2 model; dev Supabase project and redirect registry.          | One Next.js app gets an ID token via code+PKCE, validates issuer/signature/audience/nonce/state, establishes its own session, and rejects wrong client, redirect, state, PKCE, inactive app, and nonmember. No custom auth server. |
-| 4. Multi-app rollout           | Register clients per environment; exact HTTPS callbacks; enforce `client_id` and resource audience in consumers, RLS and backend APIs; migrate direct-password token consumers behind feature flags. Define local and global logout effects.                                                                      | Phase 3 pilot; each app's RLS/API inventory.                        | Same-domain and cross-domain browser tests pass. A token issued for app A cannot authorize app B. Legacy routes remain compatible until consumers are migrated and signed off.                                                     |
-| 5. Reusable SDK                | Publish framework-independent OAuth client core and Next.js server adapter plus example app. Provide login redirect, callback validation, server session helpers, logout, typed errors and protected-route helper.                                                                                                | Stable Phase 3/4 protocol and session decisions.                    | Example integrates with only URL/client ID/callback and server secret where needed; no refresh token in browser localStorage or exposed server credential; SDK compatibility and contract tests pass.                              |
-| 6. Security and operations     | Threat-model and test all requested bypass/replay/CSRF/redirect/RLS/PKCE cases; audit event pipeline, alerting, health and rollback runbooks; deployment docs.                                                                                                                                                    | Stable flows and operational owners.                                | Security test matrix and remaining-risk register approved; CI, staging smoke, production smoke and rollback drill documented.                                                                                                      |
+| Phase | Work | Acceptance gate |
+| --- | --- | --- |
+| 0. Baseline | Repository, Auth, schema, RLS, and consumer inventory. | Complete for current test setup. |
+| 1. Existing flow | Hosted registration, password lifecycle, consumer compatibility, abuse controls. | Completed live flow; resend-delivery check remains open. |
+| 2. App access | Private app registry, automatic grants, membership checks in consumers. | Complete for current test setup; direct shared-data isolation remains Phase 4. |
+| 3. Reliable shared auth | App-aware returns, consumer session hardening, live flow and denial checks. | One password works in both apps and all protected flows/returns pass without tokens in URLs. |
+| 4. Data isolation | Audit and enforce membership/ownership across RLS, RPCs, server and personal-token paths; onboard a third test app. | Revoked and cross-app access fails even with a previously issued token. |
+| 5. Optional SSO | Select a stable OIDC provider, migrate identities/schema in a disposable copy, pilot two apps. | Seamless sign-in and token/data isolation pass before cutover. |
+| 6. Operations | Alerts, redacted events, staging/production separation, rotation, rollback. | Operational checks and rollback drill pass before real users. |
 
-## Implementation decisions to settle before Phase 2
+## Implementation decisions
 
 1. **Application entitlement policy.** For the current test setup, the project owner registers apps and manages revocations through SQL. Every active registered app defaults to automatic enrollment for existing and new users. Unknown and inactive apps, plus revoked or missing memberships, are denied. Review this policy before onboarding real users or third-party apps. See [PHASE2_ACCESS.md](PHASE2_ACCESS.md).
-2. **OAuth client type.** Prefer confidential clients and backend-for-frontend sessions for Next.js servers; public clients with PKCE for mobile/native or browser-only apps. Never ship a client secret to the browser.
+2. **SSO provider.** Keep Supabase Auth as the current identity authority. If seamless SSO becomes necessary, select a generally available OIDC provider only after the Phase 5 schema and cost pilot. Never ship a client secret to the browser.
 3. **Existing consumer compatibility.** Time Logger and MyHabits now use UseAuth's token API for credential exchange; MyJournal/Stillroom remains another configured consumer. Reconcile every `/api/v1/auth` contract before changing the API; all apps are test-only, so migration may happen together after end-to-end tests. CORS origin is not proof of app identity.
-4. **Token resource model.** Supabase OAuth access tokens use `aud: authenticated` by default and carry `client_id`; ID tokens have client audience. Define resource/API audience policy and a Custom Access Token Hook only if needed. Do not conflate OAuth scopes with app roles or RLS permissions. [Token security](https://supabase.com/docs/guides/auth/oauth-server/token-security).
+4. **Token resource model.** The current Supabase JWT is a shared-project identity token, not proof of which app initiated login. Each app must check current membership, and Phase 4 must close direct-data bypasses. A future OIDC pilot will define issuer, audience, client and RLS checks for its provider.
 5. **Logout expectations.** Separate UseAuth hosted logout, one app's local session logout, Supabase session revocation, and all-device logout. Access JWTs may remain valid until expiration; global instantaneous logout needs additional online checks for sensitive actions.
 
 ## Testing strategy
 
-- Keep fast Vitest unit/contract tests for validation, error shaping, return URI rules, session cookie options, policy decisions, and consent state handling.
-- Add integration tests against the current disposable Supabase project with test accounts and reviewed migrations. Exercise live OTP/email links, rotation, password update, expired JWT, refresh reuse, and RLS with identities and OAuth clients from two different apps. Use a separate production project before onboarding real users.
-- Add browser tests for hosted UI and OAuth redirects on both same-parent-domain and unrelated-domain clients. Verify HttpOnly/Secure/SameSite cookies, CSRF state, PKCE, consent, and logout propagation.
-- Add security negative tests: unsigned/wrong issuer or audience, expired/revoked token, cross-app `client_id`, inactive app, revoked membership, altered redirect, recovery replay, account enumeration, and rate-limit bypass.
+- Keep fast Vitest unit/contract tests for validation, error shaping, return URI rules, session cookie options, policy decisions, and Phase 2 access decisions.
+- Add integration tests against the current disposable Supabase project with test accounts and reviewed migrations. Exercise live OTP/email links, password update, expired JWT, refresh reuse, app-aware returns, revocation, and RLS through both existing apps. Use a separate production project before onboarding real users.
+- Add browser tests for hosted registration and recovery returns from both same-parent-domain and unrelated-domain apps. Verify HttpOnly/Secure/SameSite cookies, CSRF checks, and local/global logout behavior. Add PKCE, consent, and OIDC checks only if the optional SSO pilot starts.
+- Add security negative tests for expired/revoked tokens, inactive apps, revoked membership, altered return URLs, recovery replay, account enumeration, and rate-limit bypass. Add issuer, audience, PKCE, and cross-client tests in an optional OIDC pilot.
 - In CI, run lint, typecheck, tests, production build, dependency audit gate, and migration/static-policy checks. Keep live provider tests in an isolated staging pipeline with test credentials stored as CI secrets; redact tokens and email-link hashes from output.
 
 ## Database migration considerations
 
-The Phase 0 read-only inventory found 47 public tables with cascading `auth.users` foreign keys and no `public.usernames` table or Supabase CLI migration-history table. The reviewed `public.usernames` migration was applied in Phase 1 after a duplicate preflight. Since all rows are test data, a clean reset may replace later backfills, but first specify the exact tables/users to remove and verify the effect on every test app. The proposed registry/membership/audit tables in [ARCHITECTURE.md](ARCHITECTURE.md) are **logical entities**, not approved DDL. Review retained table policies before issuing tokens to new OAuth clients, then test cross-app isolation with real client tokens.
+The Phase 0 read-only inventory found 47 public tables with cascading `auth.users` foreign keys and no `public.usernames` table or Supabase CLI migration-history table. The reviewed `public.usernames` migration was applied in Phase 1 after a duplicate preflight. Since all rows are test data, a clean reset may replace later backfills, but first specify the exact tables/users to remove and verify the effect on every test app. The registry and membership tables were implemented in Phase 2; the security-events table in [ARCHITECTURE.md](ARCHITECTURE.md) remains a proposal. Review retained table policies before adding another app. A third-party identity provider requires a separate migration of the UUID user keys, foreign keys, and RLS assumptions; see [PHASE3_RELIABLE_AUTH_PLAN.md](PHASE3_RELIABLE_AUTH_PLAN.md).
 
 ## Deployment and rollback approach
 
-Use the current project only for test users and disposable data. When the platform is ready for real users, create separate production and staging Supabase projects and OAuth clients, with exact per-environment redirect URIs and Vercel environment variables. In the current test setup, code can roll back through Vercel deployments, while OAuth client/configuration and secret changes need an explicit reversal plan; deleted test rows will not be restored. Before any future production release, add database backup/restore and staged rollout gates. Rolling back code does not automatically roll back schema or issued sessions.
+Use the current project only for test users and disposable data. When the platform is ready for real users, create separate production and staging Supabase projects, with exact per-environment app origins and Vercel environment variables. Add separate OIDC clients and callbacks only if the optional SSO track is selected. In the current test setup, code can roll back through Vercel deployments, while provider/configuration and secret changes need an explicit reversal plan; deleted test rows will not be restored. Before any future production release, add database backup/restore and staged rollout gates. Rolling back code does not automatically roll back schema or issued sessions.
 
 ## Phase-end report template
 
