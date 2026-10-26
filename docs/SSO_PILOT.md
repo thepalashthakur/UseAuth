@@ -34,7 +34,7 @@ The pushed annotated tag `pre-sso-2026-10-26` records the working release in Use
 
 ## Acceptance
 
-- New user: hosted registration, email confirmation, MyHabits callback, app-owned session, same identity in UseAuth and Time Logger.
+- New user: hosted registration and email confirmation, then return to MyHabits and start the OAuth redirect again if the pending authorization expired. Verify the MyHabits callback, app-owned session, and same identity in UseAuth and Time Logger. A direct continuation from the confirmation email remains a follow-up UX check.
 - Existing user: sign in once through UseAuth and then enter MyHabits without typing the password again; repeat from Time Logger when piloted.
 - Refresh rotates; local sign-out clears only the app session; revoked/disabled app loses API and direct database access; invalid state, nonce, code, client, callback, and expired session fail closed.
 - Recovery and password change work through UseAuth; browser returns to the initiating app without credentials in the URL.

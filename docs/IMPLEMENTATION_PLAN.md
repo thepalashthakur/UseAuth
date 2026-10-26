@@ -1,5 +1,7 @@
 # UseAuth implementation plan
 
+> **SSO pilot update (2026-10-26):** The owner selected Supabase as the only identity provider. The isolated `feat/sso-pilot` work is tracked in [SSO_PILOT.md](SSO_PILOT.md). The Phase 3 and Phase 5 provider decisions below describe the earlier reliability-first baseline on `main`; they are retained as release history until the pilot passes its gates.
+
 **Status:** Phase 3 planning, updated 2026-10-26. **Phase 0 is complete for the current test-only setup.** The owner confirmed all current apps and data are for testing and the data may be deleted. Findings and the reset boundary are in [PHASE0_INVENTORY.md](PHASE0_INVENTORY.md); the earlier [repository audit](AUDIT_REPORT.md) and [architecture proposal](ARCHITECTURE.md) provide more detail.
 
 ## Progress tracker
