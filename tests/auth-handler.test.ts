@@ -343,6 +343,56 @@ describe("credential and session flows", () => {
     expect(mocks.cookieDelete).toHaveBeenCalledWith("useauth-recovery");
     expect(await response.json()).not.toHaveProperty("session");
   });
+  it("explains when a reset reuses the current password", async () => {
+    mocks.auth.getUser.mockResolvedValue({ data: { user }, error: null });
+    mocks.auth.getSession.mockResolvedValue({
+      data: { session: { ...session, user } },
+    });
+    mocks.cookieGet.mockReturnValue({
+      value: createRecoveryGrant(session.access_token, user.id),
+    });
+    mocks.auth.updateUser.mockResolvedValue({
+      error: { code: "same_password", status: 422 },
+    });
+    const response = await handleAuth(
+      request(
+        { password: "current-password" },
+        { origin: "https://auth.example.com" },
+      ),
+      "reset-password",
+      "cookie",
+    );
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "SAME_PASSWORD",
+        message: "Choose a password different from your current password.",
+      },
+    });
+    expect(mocks.auth.signOut).not.toHaveBeenCalled();
+  });
+  it("keeps unexpected reset errors generic", async () => {
+    mocks.auth.getUser.mockResolvedValue({ data: { user }, error: null });
+    mocks.auth.getSession.mockResolvedValue({
+      data: { session: { ...session, user } },
+    });
+    mocks.cookieGet.mockReturnValue({
+      value: createRecoveryGrant(session.access_token, user.id),
+    });
+    mocks.auth.updateUser.mockResolvedValue({
+      error: { code: "unexpected_failure", status: 400 },
+    });
+    const response = await handleAuth(
+      request(
+        { password: "another-password" },
+        { origin: "https://auth.example.com" },
+      ),
+      "reset-password",
+      "cookie",
+    );
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.code).toBe("RESET_FAILED");
+  });
   it("reports a failed sign-out after reset and clears the recovery grant", async () => {
     mocks.auth.getUser.mockResolvedValue({ data: { user }, error: null });
     mocks.auth.getSession.mockResolvedValue({

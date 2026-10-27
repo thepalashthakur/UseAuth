@@ -258,6 +258,12 @@ export async function handleAuth(
           "Too many attempts. Please try again later.",
           429,
         );
+      if (error?.code === "same_password")
+        return fail(
+          "SAME_PASSWORD",
+          "Choose a password different from your current password.",
+          422,
+        );
       if (error)
         return fail(
           "RESET_FAILED",
