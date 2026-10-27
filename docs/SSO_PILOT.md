@@ -13,8 +13,9 @@ Decision: use the existing Supabase project as the only identity provider. Supab
 - [x] Save the client secret as a Vercel Secret for only `feat/sso-pilot`, activate the exact private client registry row, and redeploy MyHabits preview. The authorization start route reached UseAuth's consent screen for the signed-in test account.
 - [x] Complete consent and existing-user browser smoke test: callback reached MyHabits Today, a test habit was created and remained after reload, local sign-out returned to MyHabits sign-in while UseAuth stayed signed in, and re-entry returned to Today without a password or another consent prompt.
 - [x] Check live RLS client isolation and inactive-client denial in rollback-only SQL transactions. An unregistered client saw zero habits and had no MyHabits or Time Logger access; the registered MyHabits client saw its one test habit and had no Time Logger app access; temporarily disabling that client's registry row denied both access and habits. The transaction was rolled back and the row remains active.
+- [x] Prepare Time Logger SSO routes, encrypted app session, refresh, client-bound token validation, and a separate sign-in button on its isolated branch. Commit `03124c6` passes 17 tests, typecheck, and build. The button stays inactive without branch-scoped SSO settings; no Time Logger OAuth client has been registered or enabled.
 - [ ] Finish remaining acceptance: live refresh, direct bearer-token cross-app Data API/RPC denial, new-user confirmation/recovery, and failure cases. The SQL checks above do not replace an HTTP request with a real OAuth bearer token.
-- [ ] Pilot Time Logger after MyHabits passes, then review merges and production promotion.
+- [ ] Activate the Time Logger preview client only after MyHabits acceptance, then test its browser and data flows before reviewing merges or production promotion.
 
 ## Git safety
 
@@ -26,6 +27,8 @@ The pushed annotated tag `pre-sso-2026-10-26` records the working release in Use
 2. UseAuth authenticates with its existing Supabase browser session, gets authorization details from Supabase, and accepts only a configured client ID and exact callback for the active app. It checks `has_app_access` before consent. Consent approval and denial use Supabase SDK methods; no custom token issuer is introduced.
 3. MyHabits checks `state`, exchanges the code from its server with a confidential client secret and PKCE verifier, validates the ID token against Supabase JWKS, issuer, audience, expiration, and nonce, and creates its own host-only HttpOnly session. Refresh uses Supabase's OAuth token endpoint and rotates the stored refresh token.
 4. MyHabits checks its own membership on protected requests. Keep its existing credential path available until OAuth sessions, refresh, logout, recovery, and direct data access have been tested. Then pilot Time Logger separately.
+
+Time Logger's branch uses the same authorization-code pattern with its own client, callback, encrypted cookie, and local sign-out. Its API routes accept the app-owned OAuth session only after the token and app-access checks; the existing UseAuth credential cookies and API-token path remain available. During this preview, SSO users manage passwords through UseAuth. Time Logger's profile editor remains available through its existing credential sign-in until profile editing through an SSO session is implemented.
 
 ## Configuration and access gate
 
