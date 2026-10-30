@@ -1,5 +1,7 @@
 # Phase 3: reliable shared authentication plan
 
+> Historical provider decision from 2026-10-26. The owner later authorized a Supabase OAuth/OIDC preview pilot. Use [SSO_PILOT.md](SSO_PILOT.md) for current SSO status and release gates; the credential bridge described here remains available.
+
 **Decision date:** 2026-10-26. **Scope of this update:** planning only; no provider, database, or deployment setting changes.
 
 ## Decision

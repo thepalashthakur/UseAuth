@@ -1,8 +1,8 @@
 # UseAuth implementation plan
 
-> **SSO pilot update (2026-10-26):** The owner selected Supabase as the only identity provider. The isolated `feat/sso-pilot` work is tracked in [SSO_PILOT.md](SSO_PILOT.md). The Phase 3 and Phase 5 provider decisions below describe the earlier reliability-first baseline on `main`; they are retained as release history until the pilot passes its gates.
+> **SSO pilot update (2026-10-30):** The owner selected Supabase as the only identity provider. The isolated `feat/sso-pilot` work is tracked in [SSO_PILOT.md](SSO_PILOT.md). [PHASE3_RELIABLE_AUTH_PLAN.md](PHASE3_RELIABLE_AUTH_PLAN.md) preserves the earlier reliability-first decision; this tracker reflects the active preview pilot and keeps production promotion open.
 
-**Status:** Phase 3 planning, updated 2026-10-26. **Phase 0 is complete for the current test-only setup.** The owner confirmed all current apps and data are for testing and the data may be deleted. Findings and the reset boundary are in [PHASE0_INVENTORY.md](PHASE0_INVENTORY.md); the earlier [repository audit](AUDIT_REPORT.md) and [architecture proposal](ARCHITECTURE.md) provide more detail.
+**Status:** Phases 3–5 in progress, updated 2026-10-30. **Phase 0 and Phase 2 are complete for the current test-only setup.** The owner confirmed all current apps and data are for testing and the data may be deleted. The active Supabase SSO preview work and its remaining release gate are in [SSO_PILOT.md](SSO_PILOT.md). Findings and the reset boundary are in [PHASE0_INVENTORY.md](PHASE0_INVENTORY.md); the earlier [repository audit](AUDIT_REPORT.md) and [architecture proposal](ARCHITECTURE.md) provide more detail.
 
 ## Progress tracker
 
@@ -49,11 +49,11 @@ Check an item only after its acceptance check has passed, and add the date plus 
 - [ ] Enforce current app membership and row ownership in relevant RLS and server APIs; prove revocation blocks an already-issued token.
 - [ ] Add a third test app using the documented registry and auth contract, then test app-specific origin/return and data isolation.
 
-### Phase 5 — Optional standards-based SSO
+### Phase 5 — Supabase SSO pilot and rollout
 
-- [ ] Decide whether seamless cross-app sign-in is required and select a generally available OIDC provider only after the [Phase 3 decision gate](PHASE3_RELIABLE_AUTH_PLAN.md#later-sso-decision-gate).
-- [ ] In an isolated test environment, prove external-subject mapping to the UUID-based schema and migrate all affected foreign keys and RLS checks.
-- [ ] Pilot one app with provider SDK, exact callbacks, app-owned session, token validation, and negative security cases; roll out a second app only after the first passes.
+- [x] Select the existing Supabase project as the sole identity provider for an isolated OAuth/OIDC preview pilot; retain the deployed credential path while the OAuth Server remains beta. See [SSO_PILOT.md](SSO_PILOT.md).
+- [x] Prove Supabase OAuth tokens preserve the existing user UUID and use an app-specific `client_id`; apply client-bound RLS and RPC guards for the two pilot apps. Direct bearer-token checks show each preview client can read its own test row and cannot read the other app's independent rows.
+- [ ] Complete the remaining preview acceptance and release decision: live revoked-membership denial, negative code/nonce and expired-session cases, SSO-only profile editing, and an explicit decision on beta-provider risk. Keep production OAuth clients separate from preview clients if promotion is approved.
 - [ ] Publish a reusable adapter only after the protocol and session contract are stable.
 
 ### Phase 6 — Security and operations
@@ -67,6 +67,7 @@ Check an item only after its acceptance check has passed, and add the date plus 
 
 | Date | Phase/item | Change and verification evidence |
 | --- | --- | --- |
+| 2026-10-30 | Phase 5: Time Logger preview gate | The preview session renewed after a day and read its saved entry. A temporary read-only route checked the real OAuth token against both apps: own entry visible, MyHabits habit hidden, cross-app helper false, and MyHabits RPC guard HTTP 403 / `42501`. The route was removed. A live sign-out test found that generic deletion did not clear the `__Host-` cookie; Time Logger `ef57f8b` expires it with secure host-only options. Ready preview `dpl_AvSM2hdFaSGz7DGeZgwjhwESQxNV` stayed signed out after reload and rejected an unsolicited callback. Supabase documentation still labels OAuth Server beta; production promotion remains open. See [SSO_PILOT.md](SSO_PILOT.md). |
 | 2026-10-26 | Phase 3: reliability decision | Deferred Supabase OAuth Server beta and kept Supabase Auth as the current password/session authority. Compared stable third-party OIDC routes and recorded the UUID foreign-key/RLS migration required before changing identity providers. No live settings, schema, or application code changed. See [PHASE3_RELIABLE_AUTH_PLAN.md](PHASE3_RELIABLE_AUTH_PLAN.md). |
 | 2026-10-26 | Phase 2: app access model | Applied `20261026000000_application_access.sql` to test project `mxooeohiyoyguugkutzi`: private registry/membership tables, RLS, scoped boolean RPCs, automatic user and future-app grants, and active Time Logger/MyHabits records. Verified both table RLS flags, RPC grants, and ordinary-user denial of the service-role RPC. Isolated PostgreSQL checks passed for automatic grants, future app activation, inactive/unknown apps, and revoked memberships. A disposable live user received both grants and could sign in to both staged and public consumer deployments; an unknown app returned false, and revoking memberships made both staged sign-ins return HTTP 403. Restored memberships, explicitly mapped Time Logger public/team aliases to its tested deployment, verified a second disposable user could sign in on both public domains (HTTP 200), then deleted the disposable users. Time Logger tests/typecheck/build, MyHabits tests/lint/typecheck/build, and UseAuth lint/build passed. Consumer deployments: Time Logger `dpl_EeaZbaQqQdMtP7qRCTZEwFB9PFYU`, MyHabits `dpl_55txZRFrj5t7ZzeVWpuAKa1Ly9JV`. Direct shared-database RLS/client isolation remains Phase 4. |
 | 2026-10-25 | Phase 0: repository audit | Repository review recorded in [AUDIT_REPORT.md](AUDIT_REPORT.md). Live Supabase and database state remain unverified. |
@@ -90,9 +91,9 @@ Check an item only after its acceptance check has passed, and add the date plus 
 
 ## Design constraints and preserved behavior
 
-Keep Supabase Auth as the password, OTP, session, refresh, and token issuer. Retain the hosted account/registration/recovery UI, `/api/v1/auth` contract while consumers migrate, and the current mobile confirmation callbacks. Existing test identities and rows may be reset; `public.usernames` was added in Phase 1. Verify exact deletion scope before resetting anything, and review retained RLS policies before exposing new OAuth clients. Do not publish an SDK that implies SSO before a standards-based flow exists.
+Keep Supabase Auth as the password, OTP, session, refresh, and token issuer. Retain the hosted account/registration/recovery UI, `/api/v1/auth` contract while consumers migrate, and the current mobile confirmation callbacks. Existing test identities and rows may be reset; `public.usernames` was added in Phase 1. Verify exact deletion scope before resetting anything, and review retained RLS policies before exposing new OAuth clients. Do not publish a reusable SSO adapter until its protocol and session contract are stable.
 
-The current target is a reliable shared Supabase Auth identity with registered apps, app-owned sessions, and enforceable memberships. The OAuth/OIDC pilot is deferred because Supabase labels its authorization server beta. Phase 3 strengthens the working flow; standards-based SSO is an optional later migration with a separate decision gate. See [PHASE3_RELIABLE_AUTH_PLAN.md](PHASE3_RELIABLE_AUTH_PLAN.md).
+The current target is a reliable shared Supabase Auth identity with registered apps, app-owned sessions, and enforceable memberships. The owner subsequently authorized a Supabase OAuth/OIDC pilot on isolated preview branches despite its beta status; the credential path remains available. Phase 3 strengthens the working flow, and [SSO_PILOT.md](SSO_PILOT.md) records the active release gate. [PHASE3_RELIABLE_AUTH_PLAN.md](PHASE3_RELIABLE_AUTH_PLAN.md) records the earlier decision and alternatives.
 
 ## Ordered phases and dependencies
 
@@ -103,23 +104,23 @@ The current target is a reliable shared Supabase Auth identity with registered a
 | 2. App access | Private app registry, automatic grants, membership checks in consumers. | Complete for current test setup; direct shared-data isolation remains Phase 4. |
 | 3. Reliable shared auth | App-aware returns, consumer session hardening, live flow and denial checks. | One password works in both apps and all protected flows/returns pass without tokens in URLs. |
 | 4. Data isolation | Audit and enforce membership/ownership across RLS, RPCs, server and personal-token paths; onboard a third test app. | Revoked and cross-app access fails even with a previously issued token. |
-| 5. Optional SSO | Select a stable OIDC provider, migrate identities/schema in a disposable copy, pilot two apps. | Seamless sign-in and token/data isolation pass before cutover. |
+| 5. SSO pilot | Use Supabase OAuth/OIDC with exact clients and app-owned sessions on isolated previews; retain the credential fallback. | Both preview apps pass browser, token, and data isolation checks; beta-provider risk is accepted before any production cutover. |
 | 6. Operations | Alerts, redacted events, staging/production separation, rotation, rollback. | Operational checks and rollback drill pass before real users. |
 
 ## Implementation decisions
 
 1. **Application entitlement policy.** For the current test setup, the project owner registers apps and manages revocations through SQL. Every active registered app defaults to automatic enrollment for existing and new users. Unknown and inactive apps, plus revoked or missing memberships, are denied. Review this policy before onboarding real users or third-party apps. See [PHASE2_ACCESS.md](PHASE2_ACCESS.md).
-2. **SSO provider.** Keep Supabase Auth as the current identity authority. If seamless SSO becomes necessary, select a generally available OIDC provider only after the Phase 5 schema and cost pilot. Never ship a client secret to the browser.
+2. **SSO provider.** Keep Supabase Auth as the sole identity authority. The owner selected its OAuth Server for an isolated two-app preview pilot; its beta status remains a release decision. Never ship a client secret to the browser.
 3. **Existing consumer compatibility.** Time Logger and MyHabits now use UseAuth's token API for credential exchange; MyJournal/Stillroom remains another configured consumer. Reconcile every `/api/v1/auth` contract before changing the API; all apps are test-only, so migration may happen together after end-to-end tests. CORS origin is not proof of app identity.
-4. **Token resource model.** The current Supabase JWT is a shared-project identity token, not proof of which app initiated login. Each app must check current membership, and Phase 4 must close direct-data bypasses. A future OIDC pilot will define issuer, audience, client and RLS checks for its provider.
+4. **Token resource model.** Legacy Supabase JWTs have no OAuth `client_id`, so they are not proof of which app initiated login. Each app checks current membership. OAuth tokens include a client ID; the pilot applies client-bound RLS and RPC guards for Time Logger and MyHabits. Phase 4 must inventory and close remaining direct-data paths across the shared database.
 5. **Logout expectations.** Separate UseAuth hosted logout, one app's local session logout, Supabase session revocation, and all-device logout. Access JWTs may remain valid until expiration; global instantaneous logout needs additional online checks for sensitive actions.
 
 ## Testing strategy
 
 - Keep fast Vitest unit/contract tests for validation, error shaping, return URI rules, session cookie options, policy decisions, and Phase 2 access decisions.
 - Add integration tests against the current disposable Supabase project with test accounts and reviewed migrations. Exercise live OTP/email links, password update, expired JWT, refresh reuse, app-aware returns, revocation, and RLS through both existing apps. Use a separate production project before onboarding real users.
-- Add browser tests for hosted registration and recovery returns from both same-parent-domain and unrelated-domain apps. Verify HttpOnly/Secure/SameSite cookies, CSRF checks, and local/global logout behavior. Add PKCE, consent, and OIDC checks only if the optional SSO pilot starts.
-- Add security negative tests for expired/revoked tokens, inactive apps, revoked membership, altered return URLs, recovery replay, account enumeration, and rate-limit bypass. Add issuer, audience, PKCE, and cross-client tests in an optional OIDC pilot.
+- Add browser tests for hosted registration and recovery returns from both same-parent-domain and unrelated-domain apps. Verify HttpOnly/Secure/SameSite cookies, CSRF checks, and local/global logout behavior. The active SSO preview also needs PKCE, consent, and OIDC checks.
+- Add security negative tests for expired/revoked tokens, inactive apps, revoked membership, altered return URLs, recovery replay, account enumeration, and rate-limit bypass. Include issuer, audience, PKCE, and cross-client checks in the SSO pilot.
 - In CI, run lint, typecheck, tests, production build, dependency audit gate, and migration/static-policy checks. Keep live provider tests in an isolated staging pipeline with test credentials stored as CI secrets; redact tokens and email-link hashes from output.
 
 ## Database migration considerations
@@ -128,7 +129,7 @@ The Phase 0 read-only inventory found 47 public tables with cascading `auth.user
 
 ## Deployment and rollback approach
 
-Use the current project only for test users and disposable data. When the platform is ready for real users, create separate production and staging Supabase projects, with exact per-environment app origins and Vercel environment variables. Add separate OIDC clients and callbacks only if the optional SSO track is selected. In the current test setup, code can roll back through Vercel deployments, while provider/configuration and secret changes need an explicit reversal plan; deleted test rows will not be restored. Before any future production release, add database backup/restore and staged rollout gates. Rolling back code does not automatically roll back schema or issued sessions.
+Use the current project only for test users and disposable data. When the platform is ready for real users, create separate production and staging Supabase projects, with exact per-environment app origins and Vercel environment variables. Use separate OAuth clients and callbacks for each app and environment if SSO is promoted. In the current test setup, code can roll back through Vercel deployments, while provider/configuration and secret changes need an explicit reversal plan; deleted test rows will not be restored. Before any future production release, add database backup/restore and staged rollout gates. Rolling back code does not automatically roll back schema or issued sessions.
 
 ## Phase-end report template
 
