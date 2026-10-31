@@ -1,14 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const verifyOtp = vi.hoisted(() => vi.fn());
+const rpc = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/supabase/server", () => ({
-  cookieClient: async () => ({ auth: { verifyOtp } }),
+  cookieClient: async () => ({ auth: { verifyOtp }, rpc }),
 }));
 
 import { GET } from "@/app/auth/recovery/route";
+import { createAppReturn } from "@/lib/app-return";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  rpc.mockResolvedValue({ data: "https://app.example.com", error: null });
   vi.stubEnv("SUPABASE_URL", "https://test.supabase.co");
   vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test");
   vi.stubEnv("RECOVERY_GRANT_SECRET", "a".repeat(64));
@@ -73,5 +76,14 @@ describe("password recovery callback", () => {
     expect(attacker.headers.get("location")).toBe(
       "https://auth.example.com/reset-password",
     );
+  });
+  it("carries a signed return only when the verified email and active registry match", async () => {
+    verifyOtp.mockResolvedValue({ data: { session: { access_token: "access", user: { id: "user-1", email: "person@example.com" } } }, error: null });
+    const context = createAppReturn("myhabits", "https://app.example.com", "person@example.com", "recovery");
+    const response = await GET(new Request(`https://auth.example.com/auth/recovery?token_hash=secret&type=recovery&redirect_to=${encodeURIComponent(`https://auth.example.com/auth/recovery?context=${context}`)}`));
+    expect(new URL(response.headers.get("location")!).searchParams.get("context")).toBe(context);
+    rpc.mockResolvedValue({ data: "https://other.example.com", error: null });
+    const denied = await GET(new Request(`https://auth.example.com/auth/recovery?token_hash=secret&type=recovery&context=${context}`));
+    expect(denied.headers.get("location")).toBe("https://auth.example.com/reset-password");
   });
 });

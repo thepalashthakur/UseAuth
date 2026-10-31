@@ -68,7 +68,7 @@ export default function Docs() {
                 <pre>
                   <code>
                     {
-                      '<a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=email">Confirm your email</a>'
+                      '<a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&redirect_to={{ .RedirectTo }}">Confirm your email</a>'
                     }
                   </code>
                 </pre>
@@ -77,14 +77,15 @@ export default function Docs() {
                   <code>https://your-service.vercel.app/auth/confirm</code> in
                   Redirect URLs. Add the localhost equivalent for development.
                   For password recovery, add <code>/auth/recovery</code> for
-                  both origins. Add each consuming app’s exact return URL to
-                  Supabase Redirect URLs and set the Reset password email
+                  both origins. For signed app returns, allow the hosted callback
+                  paths with the narrow context query pattern documented in the
+                  Phase 3 rollout. Set the Reset password email
                   template to:
                 </p>
                 <pre>
                   <code>
                     {
-                      '<a href="{{ .SiteURL }}/auth/recovery?token_hash={{ .TokenHash }}&type=recovery&return_to={{ .RedirectTo }}">Reset your password</a>'
+                      '<a href="{{ .SiteURL }}/auth/recovery?token_hash={{ .TokenHash }}&type=recovery&redirect_to={{ .RedirectTo }}">Reset your password</a>'
                     }
                   </code>
                 </pre>
