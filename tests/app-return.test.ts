@@ -11,7 +11,8 @@ describe("signed app return context", () => {
     });
     expect(readAppReturn(value, "other@example.com", "confirmation")).toBeNull();
     expect(readAppReturn(value, "person@example.com", "recovery")).toBeNull();
-    expect(readAppReturn(`${value.slice(0, -1)}A`, "person@example.com", "confirmation")).toBeNull();
+    const [payload, signature] = value.split(".");
+    expect(readAppReturn(`${payload}.${signature[0] === "A" ? "B" : "A"}${signature.slice(1)}`, "person@example.com", "confirmation")).toBeNull();
     vi.setSystemTime(Date.now() + 24 * 60 * 60 * 1000 + 1);
     expect(readAppReturn(value, "person@example.com", "confirmation")).toBeNull();
     vi.useRealTimers();

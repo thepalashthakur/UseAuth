@@ -49,7 +49,8 @@ export function readAppReturn(
       .update(`app-return-v1:${parts[0]}`)
       .digest();
     const actual = Buffer.from(parts[1], "base64url");
-    if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return null;
+    if (actual.toString("base64url") !== parts[1] ||
+        actual.length !== expected.length || !timingSafeEqual(actual, expected)) return null;
     const data: unknown = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
     if (!data || typeof data !== "object") return null;
     const p = data as Record<string, unknown>;
