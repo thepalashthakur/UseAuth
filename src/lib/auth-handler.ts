@@ -25,6 +25,7 @@ import {
   recoveryCookie,
   validRecoveryGrant,
 } from "@/lib/recovery-grant";
+import { createAppReturn, registeredAppOrigin } from "@/lib/app-return";
 
 function sessionData(session: Session | null) {
   return session
@@ -163,6 +164,13 @@ export async function handleAuth(
       const parsed = forgotPassword.safeParse(input);
       if (!parsed.success)
         return fail("VALIDATION_ERROR", parsed.error.issues[0].message, 400);
+      if (parsed.data.app_id && parsed.data.return_to)
+        return fail("INVALID_RETURN_URL", "Use app_id without return_to.", 400);
+      const appReturnOrigin = parsed.data.app_id
+        ? await registeredAppOrigin(client, parsed.data.app_id)
+        : null;
+      if (parsed.data.app_id && !appReturnOrigin)
+        return fail("UNKNOWN_APP", "This app is not registered or active.", 400);
       const returnTo = parsed.data.return_to
         ? recoveryReturnUrl(
             parsed.data.return_to,
@@ -188,7 +196,9 @@ export async function handleAuth(
         );
       const { error } = await client.auth.resetPasswordForEmail(
         parsed.data.email,
-        { redirectTo: returnTo ?? `${appOrigin()}/auth/recovery` },
+        { redirectTo: appReturnOrigin
+          ? `${appOrigin()}/auth/recovery?context=${createAppReturn(parsed.data.app_id!, appReturnOrigin, parsed.data.email, "recovery")}`
+          : returnTo ?? `${appOrigin()}/auth/recovery` },
       );
       if (error?.status === 429)
         return fail(
@@ -203,13 +213,22 @@ export async function handleAuth(
       });
     }
     if (action === "resend-confirmation") {
-      const parsed = forgotPassword.pick({ email: true }).safeParse(input);
+      const parsed = forgotPassword.pick({ email: true, app_id: true }).safeParse(input);
       if (!parsed.success)
         return fail("VALIDATION_ERROR", parsed.error.issues[0].message, 400);
+      if (parsed.data.app_id && !recoveryConfigured())
+        return fail("NOT_CONFIGURED", "App return is not configured.", 503);
+      const appReturnOrigin = parsed.data.app_id
+        ? await registeredAppOrigin(client, parsed.data.app_id)
+        : null;
+      if (parsed.data.app_id && !appReturnOrigin)
+        return fail("UNKNOWN_APP", "This app is not registered or active.", 400);
       const { error } = await client.auth.resend({
         type: "signup",
         email: parsed.data.email,
-        options: { emailRedirectTo: `${appOrigin()}/auth/confirm` },
+        options: { emailRedirectTo: appReturnOrigin
+          ? `${appOrigin()}/auth/confirm?context=${createAppReturn(parsed.data.app_id!, appReturnOrigin, parsed.data.email, "confirmation")}`
+          : `${appOrigin()}/auth/confirm` },
       });
       if (error?.status === 429)
         return fail("RATE_LIMITED", "Too many attempts. Please try again later.", 429);
@@ -450,6 +469,18 @@ export async function handleAuth(
           503,
         );
       const { email, password } = parsed.data;
+      const appId = "app_id" in parsed.data && typeof parsed.data.app_id === "string"
+        ? parsed.data.app_id
+        : undefined;
+      if (appId && !recoveryConfigured())
+        return fail("NOT_CONFIGURED", "App return is not configured.", 503);
+      if (platform && appId)
+        return fail("VALIDATION_ERROR", "Use either platform or app_id.", 400);
+      const appReturnOrigin = action === "sign-up" && appId
+        ? await registeredAppOrigin(client, appId)
+        : null;
+      if (appId && !appReturnOrigin)
+        return fail("UNKNOWN_APP", "This app is not registered or active.", 400);
       const username =
         "username" in parsed.data && typeof parsed.data.username === "string"
           ? parsed.data.username
@@ -481,7 +512,9 @@ export async function handleAuth(
               options: {
                 emailRedirectTo: platform
                   ? `${appOrigin()}/auth/mobile/confirm/${platform}`
-                  : `${appOrigin()}/auth/confirm`,
+                  : appReturnOrigin
+                    ? `${appOrigin()}/auth/confirm?context=${createAppReturn(appId!, appReturnOrigin, email, "confirmation")}`
+                    : `${appOrigin()}/auth/confirm`,
                 ...(username || displayName
                   ? {
                       data: {

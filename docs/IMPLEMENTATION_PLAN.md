@@ -40,7 +40,7 @@ Check an item only after its acceptance check has passed, and add the date plus 
 
 - [x] Compare the beta OAuth path with stable alternatives and record the current decision. See [PHASE3_RELIABLE_AUTH_PLAN.md](PHASE3_RELIABLE_AUTH_PLAN.md).
 - [x] Freeze the existing UseAuth and consumer auth/session contracts and inventory legacy token paths. See [AUTH_CONTRACT_BASELINE.md](AUTH_CONTRACT_BASELINE.md); full table/RPC/Realtime audit remains Phase 4.
-- [ ] Add verified, app-aware return after confirmation and password recovery.
+- [ ] Add verified, app-aware return after confirmation and password recovery. Code is prepared on isolated branches; live Supabase configuration and email acceptance remain. See [APP_RETURN_ROLLOUT.md](APP_RETURN_ROLLOUT.md).
 - [ ] Harden app session refresh, denial cleanup, cookies, CSRF, and logout behavior.
 - [ ] Verify signup, login, confirmation, reset, password change, refresh, and logout from both apps with disposable accounts.
 

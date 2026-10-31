@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { recoveryReturnUrl } from "@/lib/auth-contract";
 import { cookies } from "next/headers";
 import { recoveryCookie, validRecoveryGrant } from "@/lib/recovery-grant";
+import { readAppReturn, registeredAppOrigin } from "@/lib/app-return";
 
 export const metadata = { title: "Reset password" };
 export const dynamic = "force-dynamic";
@@ -13,8 +14,10 @@ export const dynamic = "force-dynamic";
 export default async function ResetPassword({
   searchParams,
 }: {
-  searchParams: Promise<{ return_to?: string }>;
+  searchParams: Promise<{ return_to?: string; context?: string }>;
 }) {
+  const params = await searchParams;
+  let signedReturn: string | null = null;
   if (isConfigured()) {
     const client = await cookieClient();
     const { data, error } = await client.auth.getUser();
@@ -32,14 +35,19 @@ export default async function ResetPassword({
       )
     )
       redirect("/forgot-password?error=invalid");
+    const context = data.user.email
+      ? readAppReturn(params.context, data.user.email, "recovery")
+      : null;
+    const origin = context ? await registeredAppOrigin(client, context.appId) : null;
+    if (origin === context?.origin) signedReturn = origin;
   }
   return (
     <AuthLayout>
       <PasswordRecoveryForm
         mode="reset"
         configured={isConfigured()}
-        returnTo={recoveryReturnUrl(
-          (await searchParams).return_to,
+        returnTo={signedReturn ?? recoveryReturnUrl(
+          params.return_to,
           process.env.AUTH_ALLOWED_ORIGINS,
         )}
       />

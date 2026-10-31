@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function ForgotPassword({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; return_to?: string }>;
+  searchParams: Promise<{ error?: string; return_to?: string; app_id?: string }>;
 }) {
   const params = await searchParams;
   return (
@@ -18,6 +18,7 @@ export default async function ForgotPassword({
         mode="forgot"
         configured={isConfigured()}
         invalidLink={params.error === "invalid"}
+        appId={params.app_id && /^[a-z][a-z0-9_-]{2,63}$/.test(params.app_id) ? params.app_id : null}
         returnTo={recoveryReturnUrl(
           params.return_to,
           process.env.AUTH_ALLOWED_ORIGINS,
