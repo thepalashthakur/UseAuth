@@ -23,7 +23,7 @@ describe("confirmation return", () => {
     const context = createAppReturn("myhabits", "https://app.example.com", "person@example.com", "confirmation");
     const target = `https://auth.example.com/auth/confirm?context=${context}`;
     const response = await GET(new Request(`https://auth.example.com/auth/confirm?token_hash=secret&type=email&redirect_to=${encodeURIComponent(target)}`));
-    expect(response.headers.get("location")).toBe("https://app.example.com/");
+    expect(response.headers.get("location")).toBe("https://app.example.com/auth/return?result=confirmed");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
   });
   it("keeps mismatched or inactive returns on UseAuth", async () => {
