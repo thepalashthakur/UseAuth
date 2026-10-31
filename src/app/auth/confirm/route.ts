@@ -38,7 +38,10 @@ export async function GET(request: Request) {
           ? readAppReturn(contextValue, data.user.email, "confirmation")
           : null;
         const origin = context ? await registeredAppOrigin(client, context.appId) : null;
-        return NextResponse.redirect(origin === context?.origin ? origin : new URL("/account", url.origin), {
+        const destination = origin === context?.origin
+          ? new URL("/auth/return?result=confirmed", origin)
+          : new URL("/account", url.origin);
+        return NextResponse.redirect(destination, {
           headers: {
             "Cache-Control": "private, no-store",
             "Referrer-Policy": "no-referrer",

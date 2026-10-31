@@ -39,7 +39,8 @@ export default async function ResetPassword({
       ? readAppReturn(params.context, data.user.email, "recovery")
       : null;
     const origin = context ? await registeredAppOrigin(client, context.appId) : null;
-    if (origin === context?.origin) signedReturn = origin;
+    if (origin === context?.origin)
+      signedReturn = new URL("/auth/return?result=password-updated", origin).href;
   }
   return (
     <AuthLayout>
