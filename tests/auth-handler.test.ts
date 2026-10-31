@@ -32,6 +32,7 @@ vi.mock("@/lib/supabase/server", () => ({
 import { handleAuth } from "@/lib/auth-handler";
 import { allowedOrigin, recoveryReturnUrl } from "@/lib/auth-contract";
 import { createRecoveryGrant } from "@/lib/recovery-grant";
+import { readAppReturn } from "@/lib/app-return";
 
 const user = {
   id: "user-1",
@@ -204,6 +205,19 @@ describe("authentication boundaries", () => {
 });
 
 describe("credential and session flows", () => {
+  it("signs a registered app return for recovery and rejects inactive apps", async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: "https://app.example.com", error: null });
+    mocks.auth.resetPasswordForEmail.mockResolvedValue({ error: null });
+    const result = await handleAuth(request({ email: "test@example.com", app_id: "myhabits" }), "forgot-password", "token");
+    expect(result.status).toBe(200);
+    const redirect = mocks.auth.resetPasswordForEmail.mock.calls[0][1].redirectTo as string;
+    const context = new URL(redirect).searchParams.get("context");
+    expect(readAppReturn(context, "test@example.com", "recovery")).toEqual({ appId: "myhabits", origin: "https://app.example.com" });
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: null });
+    const denied = await handleAuth(request({ email: "test@example.com", app_id: "inactive" }), "forgot-password", "token");
+    expect(denied.status).toBe(400);
+    expect(mocks.auth.resetPasswordForEmail).toHaveBeenCalledTimes(1);
+  });
   it("sends a recovery email without revealing whether the account exists", async () => {
     mocks.auth.resetPasswordForEmail.mockResolvedValue({ error: null });
     const response = await handleAuth(

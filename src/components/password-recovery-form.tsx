@@ -9,11 +9,13 @@ export function PasswordRecoveryForm({
   configured,
   invalidLink = false,
   returnTo = null,
+  appId = null,
 }: {
   mode: "forgot" | "reset";
   configured: boolean;
   invalidLink?: boolean;
   returnTo?: string | null;
+  appId?: string | null;
 }) {
   const forgot = mode === "forgot";
   const [visible, setVisible] = useState(false);
@@ -45,6 +47,7 @@ export function PasswordRecoveryForm({
             forgot
               ? {
                   email: String(form.get("email")).trim(),
+                  ...(appId ? { app_id: appId } : {}),
                   ...(returnTo ? { return_to: returnTo } : {}),
                 }
               : { password: form.get("password") },

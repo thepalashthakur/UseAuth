@@ -33,6 +33,7 @@ export const mobilePlatform = z.enum(["ios", "android"]);
 export type MobilePlatform = z.infer<typeof mobilePlatform>;
 export const tokenSignup = signup.extend({
   platform: mobilePlatform.optional(),
+  app_id: z.string().regex(/^[a-z][a-z0-9_-]{2,63}$/).optional(),
 });
 export const refresh = z
   .object({ refresh_token: z.string().min(1).max(4096) })
@@ -42,6 +43,7 @@ export const logout = refresh.extend({
 });
 export const forgotPassword = credentials.pick({ email: true }).extend({
   return_to: z.string().max(2048).optional(),
+  app_id: z.string().regex(/^[a-z][a-z0-9_-]{2,63}$/).optional(),
 });
 export const resetPassword = z
   .object({
