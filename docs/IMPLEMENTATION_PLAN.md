@@ -2,7 +2,7 @@
 
 > **SSO pilot update (2026-10-30):** The owner selected Supabase as the only identity provider. The isolated `feat/sso-pilot` work is tracked in [SSO_PILOT.md](SSO_PILOT.md). [PHASE3_RELIABLE_AUTH_PLAN.md](PHASE3_RELIABLE_AUTH_PLAN.md) preserves the earlier reliability-first decision; this tracker reflects the active preview pilot and keeps production promotion open.
 
-**Status:** Phases 3–5 in progress, updated 2026-10-30. **Phase 0 and Phase 2 are complete for the current test-only setup.** The owner confirmed all current apps and data are for testing and the data may be deleted. The active Supabase SSO preview work and its remaining release gate are in [SSO_PILOT.md](SSO_PILOT.md). Findings and the reset boundary are in [PHASE0_INVENTORY.md](PHASE0_INVENTORY.md); the earlier [repository audit](AUDIT_REPORT.md) and [architecture proposal](ARCHITECTURE.md) provide more detail.
+**Status:** Phases 3–5 in progress, updated 2026-10-31. **Phases 0–2 are complete for the current test-only setup.** The owner confirmed all current apps and data are for testing and the data may be deleted. The active Supabase SSO preview work and its remaining release gate are in [SSO_PILOT.md](SSO_PILOT.md). Findings and the reset boundary are in [PHASE0_INVENTORY.md](PHASE0_INVENTORY.md); the earlier [repository audit](AUDIT_REPORT.md) and [architecture proposal](ARCHITECTURE.md) provide more detail.
 
 ## Progress tracker
 
@@ -25,8 +25,9 @@ Check an item only after its acceptance check has passed, and add the date plus 
 - [x] Add resend verification and repair any failures found in recovery sign-out or hosted session refresh.
 - [x] Add abuse controls and redacted security event logging for public auth routes.
 - [x] Test expired sessions, CSRF/origin rejection, rate limits, invalid links, and recovery replay.
+- [x] Verify successful confirmation resend after cooldown, use the shared `MyCodex` email sender name, and review the live WAF threshold for the current test traffic.
 
-**Phase 1 follow-ups:** Successful resend delivery passed on 2026-10-31 after the provider cooldown. The earlier immediate resend returned provider HTTP 429 and UseAuth preserved that response. Request-ID logs redact credentials; live origin, invalid-token, rate-limit, and recovery-replay checks passed. The SMTP display name is now “MyCodex,” the shared app-group name; the sender address remains `myjournal@bitbitduck.com` until a shared sender domain/address is configured. Revisit the 100/min/IP WAF threshold before real traffic: server-side consumers may share an egress IP.
+**Phase 1 closure for test apps:** Successful resend delivery passed on 2026-10-31 after the provider cooldown. The earlier immediate resend returned provider HTTP 429 and UseAuth preserved that response. Request-ID logs redact credentials; live origin, invalid-token, rate-limit, and recovery-replay checks passed. The SMTP display name is now “MyCodex,” the shared app-group name; the sender address remains `myjournal@bitbitduck.com` until a shared sender domain/address is configured. The live WAF rule remains 100 POST requests per 60 seconds per IP for `/api/`; 24-hour traffic showed 16 allowed requests and no throttling. This is sufficient for the current test traffic, not a capacity decision for real users. Phase 6 owns load-informed tuning because server-side consumers may share an egress IP.
 
 ### Phase 2 — Application access model
 
@@ -59,6 +60,7 @@ Check an item only after its acceptance check has passed, and add the date plus 
 ### Phase 6 — Security and operations
 
 - [ ] Run the negative security test matrix and document remaining risks.
+- [ ] Before real-user traffic, measure shared consumer egress and tune the UseAuth WAF limit using production-like load and observed false positives.
 - [ ] Configure alerting, redacted audit events, health checks, and operational ownership.
 - [ ] Document staging/production setup, key rotation, backup, rollback, and incident response.
 - [ ] Complete staging and production smoke tests and a rollback drill.
@@ -67,6 +69,7 @@ Check an item only after its acceptance check has passed, and add the date plus 
 
 | Date | Phase/item | Change and verification evidence |
 | --- | --- | --- |
+| 2026-10-31 | Phase 1: WAF threshold review and closure | The linked UseAuth Vercel project still has one live, valid fixed-window rule `rule_auth_post_baseline_JHsCCX`: POST paths under `/api/`, 100 requests per 60 seconds grouped by IP, HTTP 429 on excess. Firewall overview shows no draft. The last 24 hours report 16 allowed requests and no rate-limit events. Time Logger and MyHabits both call `/api/v1/auth` from their servers, so a shared egress IP can aggregate users. Kept the test-only rule unchanged; Phase 6 requires production-like traffic measurement and tuning before real users. Phase 1 checks are complete for the present test setup. |
 | 2026-10-31 | Phase 1: shared email sender name | Changed only the custom SMTP sender display name in Supabase test project `mxooeohiyoyguugkutzi` from `MyJournal` to `MyCodex`. A dashboard reload showed `MyCodex` persisted. A confirmation resend to the existing unconfirmed disposable `+codex2` account returned HTTP 200, and Gmail showed the new message from `MyCodex` at 01:34 IST. The sender email address and SMTP provider credentials were not changed. |
 | 2026-10-31 | Phase 1: confirmation resend delivery | A fresh disposable `palashthakur.tech+codex2@gmail.com` account returned HTTP 201 with confirmation required and appeared unconfirmed in `auth.users`. After the cooldown, public UseAuth `/api/browser/auth/resend-confirmation` returned HTTP 200. Gmail showed two confirmation messages in the thread, at 01:29 and 01:30 IST, proving the resend reached the supplied inbox. The confirmation link was not opened; the disposable unconfirmed account remains for later cleanup. |
 | 2026-10-31 | Phase 5: Time Logger negative SSO cases | The protected preview rejected a fake authorization code paired with a valid fresh transaction and matching state, cleared that transaction, and issued no session. New callback route tests reject a signed ID token with the wrong nonce and an expired transaction; a session route test denies an expired SSO cookie with HTTP 401. Token tests reject an expired ID token and provider-denied refresh. No live user token or account was modified. See [SSO_PILOT.md](SSO_PILOT.md). |
